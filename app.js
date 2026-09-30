@@ -5,10 +5,10 @@ import {
     unloadModel
 } from "https://cdn.jsdelivr.net/npm/web-txt2img@0.3.1/dist/index.js";
 
-import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0/dist/esm/ort.min.js";
+import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.min.mjs";
 
 ort.env.wasm.wasmPaths =
-    "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0/dist/";
+    "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
 
 
 /* =========================================================
