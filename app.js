@@ -388,7 +388,7 @@ async function initializeAI() {
                     backendPreference: [
                         "webgpu"
                     ],
-                    ort
+                    ort,
 
                     onProgress: progress => {
 
