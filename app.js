@@ -1,1273 +1,871 @@
-// ============================================================
-// AI Image Generator
-// GitHub Pages / WebGPU / SD-Turbo
-// ============================================================
+import { Txt2ImgWorkerClient } from "https://cdn.jsdelivr.net/npm/web-txt2img@0.3.1/dist/index.js";
 
-// web-txt2img の Direct API
-//
-// npm / Vite / Worker は使用しません。
-// GitHub PagesからESM CDN経由で読み込みます。
+/* =========================================================
+   AI Image Generator
+   GitHub Pages / WebGPU / SD-Turbo
+   ========================================================= */
 
-import {
-    detectCapabilities,
-    loadModel,
-    generateImage,
-    unloadModel
-} from "https://esm.sh/web-txt2img@0.1.0";
+/* ---------- DOM ---------- */
 
+const promptInput = document.getElementById("prompt");
+const negativePromptInput = document.getElementById("negativePrompt");
 
-// ============================================================
-// DOM
-// ============================================================
+const seedInput = document.getElementById("seed");
+const stepsInput = document.getElementById("steps");
 
-const promptInput =
-    document.getElementById("prompt");
+const generateButton = document.getElementById("generate");
+const cancelButton = document.getElementById("cancel");
 
-const negativePromptInput =
-    document.getElementById("negativePrompt");
+const downloadButton = document.getElementById("downloadButton");
 
-const seedInput =
-    document.getElementById("seed");
+const clearHistoryButton = document.getElementById("clearHistory");
 
-const stepsInput =
-    document.getElementById("steps");
+const themeButton = document.getElementById("themeButton");
 
-const generateButton =
-    document.getElementById("generate");
+const progressBar = document.getElementById("progressBar");
+const progressText = document.getElementById("progressText");
 
-const cancelButton =
-    document.getElementById("cancel");
+const statusElement = document.getElementById("status");
+const statusBadge = document.getElementById("statusBadge");
 
-const downloadButton =
-    document.getElementById("downloadButton");
+const webgpuStatus = document.getElementById("webgpuStatus");
+const modelStatus = document.getElementById("modelStatus");
 
-const clearHistoryButton =
-    document.getElementById("clearHistory");
+const resultImage = document.getElementById("resultImage");
+const resultPlaceholder = document.getElementById("resultPlaceholder");
 
-const themeButton =
-    document.getElementById("themeButton");
-
-const progressBar =
-    document.getElementById("progressBar");
-
-const progressText =
-    document.getElementById("progressText");
-
-const statusText =
-    document.getElementById("status");
-
-const statusBadge =
-    document.getElementById("statusBadge");
-
-const webgpuStatus =
-    document.getElementById("webgpuStatus");
-
-const modelStatus =
-    document.getElementById("modelStatus");
-
-const resultImage =
-    document.getElementById("resultImage");
-
-const resultPlaceholder =
-    document.getElementById("resultPlaceholder");
-
-const historyElement =
-    document.getElementById("history");
+const historyElement = document.getElementById("history");
 
 
-// ============================================================
-// 状態
-// ============================================================
+/* ---------- State ---------- */
 
+let client = null;
 let modelLoaded = false;
-
 let generating = false;
 
+let currentAbort = null;
 let currentImageURL = null;
 
-let currentAbortController = null;
 
+/* =========================================================
+   Utility
+   ========================================================= */
 
-// ============================================================
-// 定数
-// ============================================================
+function setProgress(value, text = null) {
+    let percent = Number(value);
 
-const MODEL_ID =
-    "sd-turbo";
-
-const HISTORY_KEY =
-    "ai-image-generator-history";
-
-
-// ============================================================
-// UI
-// ============================================================
-
-function setProgress(
-    percent,
-    message
-) {
-
-    let value =
-        Number(percent);
-
-    if (!Number.isFinite(value)) {
-        value = 0;
+    if (!Number.isFinite(percent)) {
+        percent = 0;
     }
 
-    value =
-        Math.max(
-            0,
-            Math.min(
-                100,
-                value
-            )
-        );
+    percent = Math.max(0, Math.min(100, percent));
 
+    if (progressBar) {
+        progressBar.value = percent;
 
-    progressBar.value =
-        value;
-
-
-    progressText.textContent =
-        `${Math.round(value)}%`;
-
-
-    if (message) {
-
-        statusText.textContent =
-            message;
-
+        if (progressBar.style) {
+            progressBar.style.width = `${percent}%`;
+        }
     }
 
+    if (progressText) {
+        progressText.textContent =
+            text !== null
+                ? text
+                : `${Math.round(percent)}%`;
+    }
 }
 
 
-function setBadge(
-    type,
-    text
-) {
-
-    statusBadge.className =
-        `badge ${type}`;
-
-    statusBadge.textContent =
-        text;
-
-}
-
-
-function setModelStatus(
-    text
-) {
-
-    modelStatus.textContent =
-        text;
-
-}
-
-
-// ============================================================
-// WebGPU確認
-// ============================================================
-
-async function checkWebGPU() {
-
-    if (!("gpu" in navigator)) {
-
-        webgpuStatus.textContent =
-            "利用不可";
-
-        throw new Error(
-            "このブラウザではWebGPUが利用できません。ChromeまたはEdgeなどのWebGPU対応ブラウザを使用してください。"
-        );
+function setStatus(text, type = "loading") {
+    if (statusElement) {
+        statusElement.textContent = text;
     }
 
+    if (statusBadge) {
+        statusBadge.textContent =
+            type === "ready"
+                ? "準備完了"
+                : type === "error"
+                    ? "エラー"
+                    : type === "generating"
+                        ? "生成中"
+                        : "準備中";
 
-    const adapter =
-        await navigator.gpu.requestAdapter();
+        statusBadge.className = "status-badge";
 
-
-    if (!adapter) {
-
-        webgpuStatus.textContent =
-            "利用不可";
-
-        throw new Error(
-            "WebGPUアダプターを取得できませんでした。"
-        );
+        if (type === "ready") {
+            statusBadge.classList.add("success");
+        } else if (type === "error") {
+            statusBadge.classList.add("error");
+        } else if (type === "generating") {
+            statusBadge.classList.add("generating");
+        }
     }
-
-
-    webgpuStatus.textContent =
-        "利用可能";
-
-
-    return true;
 }
 
 
-// ============================================================
-// AI初期化
-// ============================================================
+function setButtonState() {
+    if (generateButton) {
+        generateButton.disabled = generating || !modelLoaded;
+    }
+
+    if (cancelButton) {
+        cancelButton.disabled = !generating;
+    }
+}
+
+
+function randomSeed() {
+    return Math.floor(Math.random() * 2147483647);
+}
+
+
+function getSeed() {
+    const value = Number(seedInput?.value);
+
+    if (Number.isInteger(value) && value >= 0) {
+        return value;
+    }
+
+    return randomSeed();
+}
+
+
+function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+        return "";
+    }
+
+    const units = ["B", "KB", "MB", "GB"];
+
+    let value = bytes;
+    let index = 0;
+
+    while (value >= 1024 && index < units.length - 1) {
+        value /= 1024;
+        index++;
+    }
+
+    return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+
+/* =========================================================
+   WebGPU / Model initialization
+   ========================================================= */
 
 async function initializeAI() {
-
     try {
+        setStatus("AIモデルを準備しています...", "loading");
 
-        setBadge(
-            "loading",
-            "準備中"
-        );
+        setProgress(0, "0%");
 
+        if (webgpuStatus) {
+            webgpuStatus.textContent = "確認中...";
+        }
 
-        generateButton.disabled =
-            true;
+        if (modelStatus) {
+            modelStatus.textContent = "読み込み前";
+        }
 
+        /*
+         * web-txt2img Worker client
+         *
+         * The package itself creates the module Worker.
+         */
+        client = Txt2ImgWorkerClient.createDefault();
 
-        setModelStatus(
-            "WebGPUを確認中..."
-        );
+        /* ---------- Detect capabilities ---------- */
 
+        const capabilities = await client.detect();
 
-        setProgress(
-            0,
-            "WebGPUを確認しています..."
-        );
+        console.log("WebGPU capabilities:", capabilities);
 
-
-        // ----------------------------------------------------
-        // WebGPU
-        // ----------------------------------------------------
-
-        await checkWebGPU();
-
-
-        // ----------------------------------------------------
-        // web-txt2img capabilities
-        // ----------------------------------------------------
-
-        setModelStatus(
-            "WebGPU能力を確認中..."
-        );
-
-
-        setProgress(
-            2,
-            "AIエンジンを確認しています..."
-        );
-
-
-        const capabilities =
-            await detectCapabilities();
-
-
-        console.log(
-            "Capabilities:",
-            capabilities
-        );
-
-
-        if (!capabilities.webgpu) {
+        if (capabilities?.webgpu) {
+            if (webgpuStatus) {
+                webgpuStatus.textContent = "利用可能";
+            }
+        } else {
+            if (webgpuStatus) {
+                webgpuStatus.textContent = "利用できません";
+            }
 
             throw new Error(
-                "web-txt2imgからWebGPUが利用できないと判定されました。"
+                "このブラウザではWebGPUを利用できません。ChromeまたはEdgeなどのWebGPU対応ブラウザを使用してください。"
             );
         }
 
+        /* ---------- Load SD-Turbo ---------- */
 
-        // ----------------------------------------------------
-        // モデルロード
-        // ----------------------------------------------------
+        if (modelStatus) {
+            modelStatus.textContent = "SD-Turbo読み込み中...";
+        }
 
-        setModelStatus(
-            "SD-Turbo読み込み中..."
-        );
+        setStatus("AIモデルを読み込んでいます...", "loading");
 
+        setProgress(0, "モデル読み込み中... 0%");
 
-        setProgress(
-            3,
-            "SD-Turboを読み込んでいます..."
-        );
+        const loadResult = await client.load(
+            "sd-turbo",
+            {
+                backendPreference: ["webgpu"]
+            },
+            progress => {
+                console.log("Model load:", progress);
 
+                /*
+                 * web-txt2img 0.3.x provides pct when available.
+                 */
+                let percent = null;
 
-        const loadResult =
-            await loadModel(
-                MODEL_ID,
-                {
-                    backendPreference: [
-                        "webgpu"
-                    ],
-
-                    onProgress:
-                        handleModelProgress
+                if (typeof progress?.pct === "number") {
+                    percent = progress.pct;
                 }
-            );
 
+                if (percent === null && typeof progress?.progress === "number") {
+                    percent = progress.progress;
+                }
 
-        console.log(
-            "Model load:",
-            loadResult
+                if (percent !== null) {
+                    /*
+                     * Some APIs use 0-1, others 0-100.
+                     */
+                    if (percent >= 0 && percent <= 1) {
+                        percent *= 100;
+                    }
+
+                    const downloaded =
+                        formatBytes(progress?.bytesDownloaded);
+
+                    const total =
+                        formatBytes(progress?.totalBytesExpected);
+
+                    let text = `モデル読み込み中... ${Math.round(percent)}%`;
+
+                    if (downloaded && total) {
+                        text += ` (${downloaded} / ${total})`;
+                    }
+
+                    setProgress(percent, text);
+                } else {
+                    setProgress(
+                        0,
+                        "モデルを読み込んでいます..."
+                    );
+                }
+            }
         );
 
+        console.log("Model load result:", loadResult);
 
-        if (
-            !loadResult ||
-            loadResult.ok === false
-        ) {
-
+        if (!loadResult?.ok) {
             throw new Error(
                 loadResult?.message ||
-                loadResult?.reason ||
                 "SD-Turboの読み込みに失敗しました。"
             );
         }
 
+        modelLoaded = true;
 
-        // ----------------------------------------------------
-        // 完了
-        // ----------------------------------------------------
+        if (modelStatus) {
+            modelStatus.textContent = "SD-Turbo準備完了";
+        }
 
-        modelLoaded =
-            true;
+        setProgress(100, "100%");
 
+        setStatus("AIモデルの準備が完了しました", "ready");
 
-        generateButton.disabled =
-            false;
+        setButtonState();
 
-
-        setModelStatus(
-            "SD-Turbo 準備完了"
-        );
-
-
-        setBadge(
-            "ready",
-            "準備完了"
-        );
-
-
-        setProgress(
-            100,
-            "AIモデルの準備が完了しました！"
-        );
-
-
-        console.log(
-            "SD-Turbo ready."
-        );
-
-
+        console.log("AI model ready.");
     } catch (error) {
+        console.error("AI initialization failed:", error);
 
-        console.error(
-            "Initialization error:",
-            error
+        modelLoaded = false;
+
+        if (webgpuStatus && !webgpuStatus.textContent) {
+            webgpuStatus.textContent = "エラー";
+        }
+
+        if (modelStatus) {
+            modelStatus.textContent = "読み込み失敗";
+        }
+
+        setProgress(0, "読み込みに失敗しました");
+
+        setStatus(
+            `AIモデルを読み込めませんでした: ${error.message}`,
+            "error"
         );
 
-
-        modelLoaded =
-            false;
-
-
-        generateButton.disabled =
-            true;
-
-
-        setBadge(
-            "error",
-            "エラー"
-        );
-
-
-        setModelStatus(
-            "読み込み失敗"
-        );
-
-
-        setProgress(
-            0,
-            `エラー: ${error.message || error}`
-        );
-
+        setButtonState();
     }
-
 }
 
 
-// ============================================================
-// モデル読み込み進捗
-// ============================================================
+/* =========================================================
+   Image generation
+   ========================================================= */
 
-function handleModelProgress(
-    progress = {}
-) {
-
-    console.log(
-        "MODEL:",
-        progress
-    );
-
-
-    let pct =
-        progress.pct;
-
-
-    if (
-        typeof pct !== "number"
-    ) {
-
-        pct = 0;
-
-    }
-
-
-    let message =
-        progress.message ||
-        "AIモデルを読み込んでいます...";
-
-
-    // ダウンロード容量が取得できる場合
-    if (
-        typeof progress.bytesDownloaded === "number" &&
-        typeof progress.totalBytesExpected === "number" &&
-        progress.totalBytesExpected > 0
-    ) {
-
-        const downloaded =
-            (
-                progress.bytesDownloaded /
-                1024 /
-                1024
-            ).toFixed(1);
-
-
-        const total =
-            (
-                progress.totalBytesExpected /
-                1024 /
-                1024
-            ).toFixed(1);
-
-
-        message =
-            `${message} ${downloaded} / ${total} MB`;
-
-    }
-
-
-    setProgress(
-        pct,
-        message
-    );
-
-}
-
-
-// ============================================================
-// 画像生成
-// ============================================================
-
-async function generateImageFromPrompt() {
-
+async function generateImage() {
     if (generating) {
         return;
     }
 
-
-    if (!modelLoaded) {
-
-        alert(
-            "AIモデルの準備が完了していません。"
+    if (!client || !modelLoaded) {
+        setStatus(
+            "AIモデルがまだ準備できていません。",
+            "error"
         );
-
         return;
     }
 
-
-    const prompt =
-        promptInput.value.trim();
-
+    const prompt = promptInput?.value.trim() || "";
 
     if (!prompt) {
-
-        alert(
-            "プロンプトを入力してください。"
+        setStatus(
+            "プロンプトを入力してください。",
+            "error"
         );
+
+        promptInput?.focus();
 
         return;
     }
 
+    const seed = getSeed();
 
-    generating =
-        true;
+    /*
+     * Keep the value in the input so the generated image
+     * can be reproduced.
+     */
+    if (seedInput) {
+        seedInput.value = seed;
+    }
 
+    generating = true;
+    setButtonState();
 
-    generateButton.disabled =
-        true;
+    setStatus("画像を生成しています...", "generating");
 
+    setProgress(0, "生成開始...");
 
-    cancelButton.disabled =
-        false;
+    if (resultPlaceholder) {
+        resultPlaceholder.style.display = "none";
+    }
 
+    if (resultImage) {
+        resultImage.style.display = "none";
+    }
 
-    setProgress(
-        0,
-        "画像生成を開始しています..."
-    );
-
+    /*
+     * Revoke previous temporary object URL.
+     */
+    if (currentImageURL) {
+        URL.revokeObjectURL(currentImageURL);
+        currentImageURL = null;
+    }
 
     try {
+        /*
+         * SD-Turbo supports 512x512.
+         *
+         * Negative prompt is kept in the UI for compatibility,
+         * but SD-Turbo's current API does not expose a negative
+         * prompt parameter in the generate call.
+         */
+        const request = client.generate(
+            {
+                prompt,
+                seed,
+                width: 512,
+                height: 512
+            },
+            event => {
+                console.log("Generation:", event);
 
-        // ----------------------------------------------------
-        // Seed
-        // ----------------------------------------------------
+                let percent = null;
 
-        let seed;
+                if (typeof event?.pct === "number") {
+                    percent = event.pct;
+                }
 
+                if (typeof event?.progress === "number") {
+                    percent = event.progress;
+                }
 
-        const seedText =
-            seedInput.value.trim();
+                if (
+                    typeof event?.percent === "number"
+                ) {
+                    percent = event.percent;
+                }
 
+                if (percent !== null) {
+                    if (percent >= 0 && percent <= 1) {
+                        percent *= 100;
+                    }
 
-        if (seedText !== "") {
-
-            const parsed =
-                Number(seedText);
-
-
-            if (
-                !Number.isFinite(parsed)
-            ) {
-
-                throw new Error(
-                    "Seedは数字で入力してください。"
-                );
+                    setProgress(
+                        percent,
+                        `生成中... ${Math.round(percent)}%`
+                    );
+                } else if (event?.phase) {
+                    setStatus(
+                        `画像を生成しています... ${event.phase}`,
+                        "generating"
+                    );
+                }
+            },
+            {
+                busyPolicy: "queue",
+                debounceMs: 200
             }
-
-
-            seed =
-                Math.trunc(parsed);
-
-        }
-
-
-        // ----------------------------------------------------
-        // Negative Prompt
-        // ----------------------------------------------------
-
-        const negativePrompt =
-            negativePromptInput.value.trim();
-
-
-        // SD-TurboのAPIではnegative promptが正式パラメータ
-        // として公開されていないため、入力されている場合は
-        // 通常プロンプトへ安全に連結します。
-
-        let finalPrompt =
-            prompt;
-
-
-        if (negativePrompt) {
-
-            finalPrompt +=
-                `, avoid: ${negativePrompt}`;
-
-        }
-
-
-        // ----------------------------------------------------
-        // Steps
-        // ----------------------------------------------------
-
-        const steps =
-            Math.max(
-                1,
-                Math.min(
-                    4,
-                    Number(stepsInput.value) || 1
-                )
-            );
-
-
-        console.log(
-            "Prompt:",
-            finalPrompt
         );
 
+        currentAbort = request.abort;
 
-        console.log(
-            "Seed:",
-            seed
-        );
+        const result = await request.promise;
 
+        currentAbort = null;
 
-        console.log(
-            "Steps:",
-            steps
-        );
+        console.log("Generation result:", result);
 
+        if (!result?.ok) {
+            if (result?.reason === "aborted") {
+                setStatus(
+                    "画像生成をキャンセルしました。",
+                    "loading"
+                );
 
-        // ----------------------------------------------------
-        // Abort Controller
-        // ----------------------------------------------------
+                setProgress(0, "キャンセルしました");
 
-        currentAbortController =
-            new AbortController();
-
-
-        // ----------------------------------------------------
-        // Generation
-        // ----------------------------------------------------
-
-        const result =
-            await generateImage({
-
-                model:
-                    MODEL_ID,
-
-                prompt:
-                    finalPrompt,
-
-                seed:
-                    seed,
-
-                width:
-                    512,
-
-                height:
-                    512,
-
-                signal:
-                    currentAbortController.signal,
-
-                onProgress:
-                    handleGenerationProgress
-
-            });
-
-
-        console.log(
-            "Generation result:",
-            result
-        );
-
-
-        // ----------------------------------------------------
-        // エラー
-        // ----------------------------------------------------
-
-        if (
-            !result ||
-            result.ok === false
-        ) {
+                return;
+            }
 
             throw new Error(
                 result?.message ||
-                result?.reason ||
-                "画像生成に失敗しました。"
+                `画像生成に失敗しました (${result?.reason || "unknown"})`
             );
         }
 
+        /* ---------- Display image ---------- */
 
-        if (!result.blob) {
+        currentImageURL = URL.createObjectURL(result.blob);
 
-            throw new Error(
-                "生成された画像データがありません。"
-            );
+        if (resultImage) {
+            resultImage.src = currentImageURL;
+            resultImage.style.display = "block";
         }
 
-
-        // ----------------------------------------------------
-        // 画像表示
-        // ----------------------------------------------------
-
-        if (currentImageURL) {
-
-            URL.revokeObjectURL(
-                currentImageURL
-            );
-
+        if (resultPlaceholder) {
+            resultPlaceholder.style.display = "none";
         }
 
+        if (downloadButton) {
+            downloadButton.disabled = false;
+        }
 
-        currentImageURL =
-            URL.createObjectURL(
-                result.blob
-            );
+        setProgress(100, "100%");
 
-
-        resultImage.src =
-            currentImageURL;
-
-
-        resultImage.style.display =
-            "block";
-
-
-        resultPlaceholder.style.display =
-            "none";
-
-
-        downloadButton.disabled =
-            false;
-
-
-        setProgress(
-            100,
-            `生成完了！ ${Math.round(result.timeMs || 0)} ms`
+        setStatus(
+            "画像の生成が完了しました",
+            "ready"
         );
 
+        /* ---------- Save history ---------- */
 
-        // ----------------------------------------------------
-        // 履歴
-        // ----------------------------------------------------
+        saveHistoryItem({
+            prompt,
+            seed,
+            image: currentImageURL
+        });
 
-        await addHistory(
-            currentImageURL,
-            prompt
+        /*
+         * Blob URLs cannot be stored in localStorage permanently.
+         * We save history metadata only, while the current image
+         * remains available during this page session.
+         */
+        saveHistoryMetadata({
+            prompt,
+            seed,
+            createdAt: Date.now()
+        });
+
+        console.log(
+            "Generation finished:",
+            Math.round(result.timeMs || 0),
+            "ms"
         );
-
-
     } catch (error) {
-
-        console.error(
-            "Generation error:",
-            error
-        );
-
+        console.error("Generation error:", error);
 
         if (
-            error?.name ===
-            "AbortError"
+            error?.name === "AbortError" ||
+            error?.message?.toLowerCase().includes("abort")
         ) {
-
-            setProgress(
-                0,
-                "生成をキャンセルしました。"
+            setStatus(
+                "画像生成をキャンセルしました。",
+                "loading"
             );
 
+            setProgress(0, "キャンセルしました");
         } else {
-
-            setProgress(
-                0,
-                `生成エラー: ${error.message || error}`
+            setStatus(
+                `画像生成に失敗しました: ${error.message}`,
+                "error"
             );
 
+            setProgress(0, "生成失敗");
         }
-
     } finally {
+        generating = false;
+        currentAbort = null;
 
-        generating =
-            false;
-
-
-        currentAbortController =
-            null;
-
-
-        generateButton.disabled =
-            !modelLoaded;
-
-
-        cancelButton.disabled =
-            true;
-
+        setButtonState();
     }
-
 }
 
 
-// ============================================================
-// 生成進捗
-// ============================================================
+/* =========================================================
+   Cancel
+   ========================================================= */
 
-function handleGenerationProgress(
-    progress = {}
-) {
-
-    console.log(
-        "GENERATION:",
-        progress
-    );
-
-
-    let pct =
-        progress.pct;
-
-
-    if (
-        typeof pct !== "number"
-    ) {
-
-        pct = 0;
-
-    }
-
-
-    const phase =
-        progress.phase ||
-        "";
-
-
-    const phaseNames = {
-
-        tokenizing:
-            "プロンプト解析中...",
-
-        encoding:
-            "テキスト解析中...",
-
-        denoising:
-            "画像を生成中...",
-
-        decoding:
-            "画像を変換中...",
-
-        complete:
-            "生成完了..."
-
-    };
-
-
-    const message =
-        phaseNames[phase] ||
-        `画像生成中... ${Math.round(pct)}%`;
-
-
-    setProgress(
-        pct,
-        message
-    );
-
-}
-
-
-// ============================================================
-// キャンセル
-// ============================================================
-
-async function cancelGeneration() {
-
-    if (
-        !currentAbortController
-    ) {
-
+function cancelGeneration() {
+    if (!generating) {
         return;
     }
 
+    console.log("Cancel requested.");
 
-    try {
-
-        currentAbortController.abort();
-
-    } catch (error) {
-
-        console.warn(
-            "Cancel error:",
-            error
-        );
-
+    if (typeof currentAbort === "function") {
+        currentAbort();
     }
 
-
-    currentAbortController =
-        null;
-
-
-    generating =
-        false;
-
-
-    generateButton.disabled =
-        !modelLoaded;
-
-
-    cancelButton.disabled =
-        true;
-
-
-    setProgress(
-        0,
-        "生成をキャンセルしました。"
+    setStatus(
+        "画像生成をキャンセルしています...",
+        "loading"
     );
 
+    setProgress(0, "キャンセル中...");
 }
 
 
-// ============================================================
-// ダウンロード
-// ============================================================
+/* =========================================================
+   Download
+   ========================================================= */
 
-async function downloadImage() {
-
+function downloadCurrentImage() {
     if (!currentImageURL) {
         return;
     }
 
+    const link = document.createElement("a");
 
+    link.href = currentImageURL;
+    link.download = `ai-image-${Date.now()}.png`;
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+}
+
+
+/* =========================================================
+   History
+   ========================================================= */
+
+const HISTORY_KEY = "ai-image-generator-history";
+
+
+function loadHistoryMetadata() {
     try {
+        const raw = localStorage.getItem(HISTORY_KEY);
 
-        const response =
-            await fetch(
-                currentImageURL
-            );
-
-
-        const blob =
-            await response.blob();
-
-
-        const url =
-            URL.createObjectURL(
-                blob
-            );
-
-
-        const a =
-            document.createElement(
-                "a"
-            );
-
-
-        a.href =
-            url;
-
-
-        a.download =
-            `generated-${Date.now()}.png`;
-
-
-        document.body.appendChild(
-            a
-        );
-
-
-        a.click();
-
-
-        a.remove();
-
-
-        URL.revokeObjectURL(
-            url
-        );
-
-    } catch (error) {
-
-        console.error(
-            "Download error:",
-            error
-        );
-
-    }
-
-}
-
-
-// ============================================================
-// 履歴
-// ============================================================
-
-async function addHistory(
-    imageURL,
-    prompt
-) {
-
-    try {
-
-        const response =
-            await fetch(
-                imageURL
-            );
-
-
-        const blob =
-            await response.blob();
-
-
-        const reader =
-            new FileReader();
-
-
-        reader.onload =
-            () => {
-
-                const history =
-                    getHistory();
-
-
-                history.unshift({
-
-                    image:
-                        reader.result,
-
-                    prompt:
-                        prompt,
-
-                    time:
-                        Date.now()
-
-                });
-
-
-                // 最大6件
-                history.splice(
-                    6
-                );
-
-
-                try {
-
-                    localStorage.setItem(
-                        HISTORY_KEY,
-                        JSON.stringify(history)
-                    );
-
-                } catch (storageError) {
-
-                    console.warn(
-                        "History storage error:",
-                        storageError
-                    );
-
-                }
-
-
-                renderHistory();
-
-            };
-
-
-        reader.readAsDataURL(
-            blob
-        );
-
-    } catch (error) {
-
-        console.warn(
-            "History error:",
-            error
-        );
-
-    }
-
-}
-
-
-function getHistory() {
-
-    try {
-
-        return JSON.parse(
-            localStorage.getItem(
-                HISTORY_KEY
-            ) || "[]"
-        );
-
-    } catch {
-
-        return [];
-
-    }
-
-}
-
-
-function renderHistory() {
-
-    const history =
-        getHistory();
-
-
-    historyElement.innerHTML =
-        "";
-
-
-    if (
-        history.length === 0
-    ) {
-
-        historyElement.innerHTML =
-            "<p>まだ履歴はありません。</p>";
-
-        return;
-
-    }
-
-
-    for (
-        const item of history
-    ) {
-
-        const wrapper =
-            document.createElement(
-                "div"
-            );
-
-
-        wrapper.className =
-            "history-item";
-
-
-        const img =
-            document.createElement(
-                "img"
-            );
-
-
-        img.src =
-            item.image;
-
-
-        img.alt =
-            item.prompt;
-
-
-        img.title =
-            item.prompt;
-
-
-        wrapper.appendChild(
-            img
-        );
-
-
-        historyElement.appendChild(
-            wrapper
-        );
-
-    }
-
-}
-
-
-// ============================================================
-// 履歴削除
-// ============================================================
-
-clearHistoryButton.addEventListener(
-    "click",
-    () => {
-
-        localStorage.removeItem(
-            HISTORY_KEY
-        );
-
-
-        renderHistory();
-
-    }
-);
-
-
-// ============================================================
-// クイックプロンプト
-// ============================================================
-
-document
-    .querySelectorAll(
-        ".quick-prompt"
-    )
-    .forEach(
-        button => {
-
-            button.addEventListener(
-                "click",
-                () => {
-
-                    promptInput.value =
-                        button.dataset.prompt;
-
-
-                    promptInput.focus();
-
-                }
-            );
-
+        if (!raw) {
+            return [];
         }
-    );
+
+        const data = JSON.parse(raw);
+
+        return Array.isArray(data) ? data : [];
+    } catch (error) {
+        console.warn("History load failed:", error);
+        return [];
+    }
+}
 
 
-// ============================================================
-// テーマ
-// ============================================================
+function saveHistoryMetadata(item) {
+    try {
+        const history = loadHistoryMetadata();
 
-themeButton.addEventListener(
-    "click",
-    () => {
+        history.unshift(item);
 
-        document.body.classList.toggle(
-            "dark"
-        );
-
-
-        const dark =
-            document.body.classList.contains(
-                "dark"
-            );
-
-
-        themeButton.textContent =
-            dark
-                ? "☀️"
-                : "🌙";
-
+        /*
+         * Keep the history small.
+         */
+        const trimmed = history.slice(0, 30);
 
         localStorage.setItem(
-            "theme",
-            dark
-                ? "dark"
-                : "light"
+            HISTORY_KEY,
+            JSON.stringify(trimmed)
+        );
+    } catch (error) {
+        console.warn("History save failed:", error);
+    }
+}
+
+
+function saveHistoryItem(item) {
+    /*
+     * Current generated image is shown in the UI.
+     *
+     * We intentionally do not put Blob URLs into localStorage
+     * because Blob URLs are temporary and become invalid after
+     * the page session ends.
+     */
+    if (!historyElement) {
+        return;
+    }
+
+    const card = document.createElement("div");
+
+    card.className = "history-item";
+
+    const image = document.createElement("img");
+
+    image.src = item.image;
+    image.alt = item.prompt;
+
+    image.loading = "lazy";
+
+    const text = document.createElement("div");
+
+    text.className = "history-prompt";
+    text.textContent = item.prompt;
+
+    const seed = document.createElement("div");
+
+    seed.className = "history-seed";
+    seed.textContent = `Seed: ${item.seed}`;
+
+    card.appendChild(image);
+    card.appendChild(text);
+    card.appendChild(seed);
+
+    historyElement.prepend(card);
+
+    /*
+     * Limit visible history.
+     */
+    while (historyElement.children.length > 20) {
+        historyElement.lastElementChild.remove();
+    }
+}
+
+
+function restoreHistoryMetadata() {
+    /*
+     * Metadata is restored only when useful UI elements exist.
+     *
+     * Since the actual Blob URLs cannot survive a page reload,
+     * we don't attempt to display nonexistent image URLs.
+     */
+    const history = loadHistoryMetadata();
+
+    console.log(
+        `保存されている生成履歴: ${history.length}件`
+    );
+}
+
+
+function clearHistory() {
+    try {
+        localStorage.removeItem(HISTORY_KEY);
+    } catch (error) {
+        console.warn("History clear failed:", error);
+    }
+
+    if (historyElement) {
+        historyElement.innerHTML = "";
+    }
+}
+
+
+/* =========================================================
+   Quick prompts
+   ========================================================= */
+
+function setupQuickPrompts() {
+    const buttons = document.querySelectorAll(
+        "[data-prompt]"
+    );
+
+    buttons.forEach(button => {
+        button.addEventListener("click", () => {
+            const value = button.dataset.prompt;
+
+            if (!value || !promptInput) {
+                return;
+            }
+
+            promptInput.value = value;
+
+            promptInput.focus();
+        });
+    });
+}
+
+
+/* =========================================================
+   Theme
+   ========================================================= */
+
+function setupTheme() {
+    if (!themeButton) {
+        return;
+    }
+
+    themeButton.addEventListener("click", () => {
+        document.body.classList.toggle("dark");
+
+        const dark =
+            document.body.classList.contains("dark");
+
+        localStorage.setItem(
+            "ai-image-generator-theme",
+            dark ? "dark" : "light"
+        );
+    });
+
+    const saved =
+        localStorage.getItem(
+            "ai-image-generator-theme"
         );
 
+    if (saved === "dark") {
+        document.body.classList.add("dark");
+    }
+}
+
+
+/* =========================================================
+   Events
+   ========================================================= */
+
+function setupEvents() {
+    generateButton?.addEventListener(
+        "click",
+        generateImage
+    );
+
+    cancelButton?.addEventListener(
+        "click",
+        cancelGeneration
+    );
+
+    downloadButton?.addEventListener(
+        "click",
+        downloadCurrentImage
+    );
+
+    clearHistoryButton?.addEventListener(
+        "click",
+        clearHistory
+    );
+
+    /*
+     * Ctrl + Enter / Ctrl + Return
+     */
+    promptInput?.addEventListener(
+        "keydown",
+        event => {
+            if (
+                event.ctrlKey &&
+                event.key === "Enter"
+            ) {
+                event.preventDefault();
+
+                if (!generating && modelLoaded) {
+                    generateImage();
+                }
+            }
+        }
+    );
+}
+
+
+/* =========================================================
+   Startup
+   ========================================================= */
+
+async function start() {
+    console.log(
+        "AI Image Generator starting..."
+    );
+
+    /*
+     * Disable generation until model is ready.
+     */
+    if (generateButton) {
+        generateButton.disabled = true;
+    }
+
+    if (cancelButton) {
+        cancelButton.disabled = true;
+    }
+
+    if (downloadButton) {
+        downloadButton.disabled = true;
+    }
+
+    setupTheme();
+    setupEvents();
+    setupQuickPrompts();
+    restoreHistoryMetadata();
+
+    /*
+     * Generate a random initial seed.
+     */
+    if (seedInput) {
+        const current = Number(seedInput.value);
+
+        if (!Number.isInteger(current)) {
+            seedInput.value = randomSeed();
+        }
+    }
+
+    await initializeAI();
+}
+
+
+/* =========================================================
+   Global error handling
+   ========================================================= */
+
+window.addEventListener(
+    "error",
+    event => {
+        console.error(
+            "Global error:",
+            event.error || event.message
+        );
     }
 );
 
 
-if (
-    localStorage.getItem(
-        "theme"
-    ) === "dark"
-) {
-
-    document.body.classList.add(
-        "dark"
-    );
-
-
-    themeButton.textContent =
-        "☀️";
-
-}
-
-
-// ============================================================
-// イベント
-// ============================================================
-
-generateButton.addEventListener(
-    "click",
-    generateImageFromPrompt
+window.addEventListener(
+    "unhandledrejection",
+    event => {
+        console.error(
+            "Unhandled promise rejection:",
+            event.reason
+        );
+    }
 );
 
 
-cancelButton.addEventListener(
-    "click",
-    cancelGeneration
-);
+/* ---------- Start ---------- */
 
-
-downloadButton.addEventListener(
-    "click",
-    downloadImage
-);
-
-
-// ============================================================
-// 起動
-// ============================================================
-
-renderHistory();
-
-initializeAI();
+start();
