@@ -5,6 +5,11 @@ import {
     unloadModel
 } from "https://cdn.jsdelivr.net/npm/web-txt2img@0.3.1/dist/index.js";
 
+import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0/dist/esm/ort.min.js";
+
+ort.env.wasm.wasmPaths =
+    "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0/dist/";
+
 
 /* =========================================================
    AI Image Generator
@@ -383,6 +388,7 @@ async function initializeAI() {
                     backendPreference: [
                         "webgpu"
                     ],
+                    ort
 
                     onProgress: progress => {
 
