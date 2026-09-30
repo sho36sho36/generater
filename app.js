@@ -10,7 +10,7 @@ import {
    AI Image Generator
    GitHub Pages
    WebGPU + SD-Turbo
-   Direct API version
+   Direct API
    ========================================================= */
 
 
@@ -78,6 +78,7 @@ const historyElement =
    ========================================================= */
 
 let modelLoaded = false;
+
 let generating = false;
 
 let currentImageURL = null;
@@ -100,8 +101,10 @@ const THEME_KEY =
    Progress
    ========================================================= */
 
-function setProgress(percent, text = null) {
-
+function setProgress(
+    percent,
+    text = null
+) {
     let value = Number(percent);
 
     if (!Number.isFinite(value)) {
@@ -115,18 +118,6 @@ function setProgress(percent, text = null) {
 
     if (progressBar) {
         progressBar.value = value;
-
-        /*
-         * Some versions of the UI use a progress element,
-         * while others use a styled div.
-         */
-        if (
-            progressBar.style &&
-            progressBar.tagName !== "PROGRESS"
-        ) {
-            progressBar.style.width =
-                `${value}%`;
-        }
     }
 
     if (progressText) {
@@ -146,9 +137,9 @@ function setStatus(
     message,
     type = "loading"
 ) {
-
     if (statusElement) {
-        statusElement.textContent = message;
+        statusElement.textContent =
+            message;
     }
 
     if (!statusBadge) {
@@ -158,37 +149,47 @@ function setStatus(
     statusBadge.className =
         "status-badge";
 
-    if (type === "ready") {
+    switch (type) {
 
-        statusBadge.textContent =
-            "準備完了";
+        case "ready":
 
-        statusBadge.classList.add(
-            "success"
-        );
+            statusBadge.textContent =
+                "準備完了";
 
-    } else if (type === "generating") {
+            statusBadge.classList.add(
+                "success"
+            );
 
-        statusBadge.textContent =
-            "生成中";
+            break;
 
-        statusBadge.classList.add(
-            "generating"
-        );
+        case "generating":
 
-    } else if (type === "error") {
+            statusBadge.textContent =
+                "生成中";
 
-        statusBadge.textContent =
-            "エラー";
+            statusBadge.classList.add(
+                "generating"
+            );
 
-        statusBadge.classList.add(
-            "error"
-        );
+            break;
 
-    } else {
+        case "error":
 
-        statusBadge.textContent =
-            "準備中";
+            statusBadge.textContent =
+                "エラー";
+
+            statusBadge.classList.add(
+                "error"
+            );
+
+            break;
+
+        default:
+
+            statusBadge.textContent =
+                "準備中";
+
+            break;
     }
 }
 
@@ -200,20 +201,17 @@ function setStatus(
 function updateButtons() {
 
     if (generateButton) {
-
         generateButton.disabled =
-            generating ||
-            !modelLoaded;
+            !modelLoaded ||
+            generating;
     }
 
     if (cancelButton) {
-
         cancelButton.disabled =
             !generating;
     }
 
     if (downloadButton) {
-
         downloadButton.disabled =
             !currentImageURL;
     }
@@ -224,7 +222,7 @@ function updateButtons() {
    Seed
    ========================================================= */
 
-function randomSeed() {
+function createRandomSeed() {
 
     return Math.floor(
         Math.random() * 2147483647
@@ -244,15 +242,15 @@ function getSeed() {
         return value;
     }
 
-    return randomSeed();
+    return createRandomSeed();
 }
 
 
 /* =========================================================
-   WebGPU detection
+   WebGPU
    ========================================================= */
 
-async function checkWebGPU() {
+async function checkBrowserWebGPU() {
 
     if (!navigator.gpu) {
 
@@ -276,28 +274,36 @@ async function checkWebGPU() {
 
 
 /* =========================================================
-   AI initialization
+   Initialize AI
    ========================================================= */
 
 async function initializeAI() {
 
     try {
 
+        console.log(
+            "AI initialization started."
+        );
+
+
         setStatus(
             "WebGPUを確認しています...",
             "loading"
         );
+
 
         setProgress(
             0,
             "0%"
         );
 
+
         if (webgpuStatus) {
 
             webgpuStatus.textContent =
                 "確認中...";
         }
+
 
         if (modelStatus) {
 
@@ -307,21 +313,34 @@ async function initializeAI() {
 
 
         /* -----------------------------------------
-           Native WebGPU check
+           Browser WebGPU
            ----------------------------------------- */
 
-        await checkWebGPU();
+        await checkBrowserWebGPU();
+
+
+        if (webgpuStatus) {
+
+            webgpuStatus.textContent =
+                "利用可能";
+        }
 
 
         /* -----------------------------------------
-           web-txt2img capability check
+           Library capabilities
            ----------------------------------------- */
+
+        console.log(
+            "Checking web-txt2img capabilities..."
+        );
+
 
         const capabilities =
             await detectCapabilities();
 
+
         console.log(
-            "web-txt2img capabilities:",
+            "Capabilities:",
             capabilities
         );
 
@@ -334,15 +353,8 @@ async function initializeAI() {
         }
 
 
-        if (webgpuStatus) {
-
-            webgpuStatus.textContent =
-                "利用可能";
-        }
-
-
         /* -----------------------------------------
-           Load SD-Turbo
+           Load model
            ----------------------------------------- */
 
         if (modelStatus) {
@@ -351,10 +363,12 @@ async function initializeAI() {
                 "SD-Turbo読み込み中...";
         }
 
+
         setStatus(
             "AIモデルを読み込んでいます...",
             "loading"
         );
+
 
         setProgress(
             0,
@@ -368,13 +382,62 @@ async function initializeAI() {
                 {
                     backendPreference: [
                         "webgpu"
-                    ]
+                    ],
+
+                    onProgress: progress => {
+
+                        console.log(
+                            "Model progress:",
+                            progress
+                        );
+
+
+                        let percent =
+                            progress?.pct;
+
+
+                        if (
+                            typeof percent !==
+                            "number"
+                        ) {
+
+                            percent =
+                                progress?.progress;
+                        }
+
+
+                        if (
+                            typeof percent ===
+                            "number"
+                        ) {
+
+                            if (
+                                percent >= 0 &&
+                                percent <= 1
+                            ) {
+                                percent *= 100;
+                            }
+
+
+                            setProgress(
+                                percent,
+                                `モデル読み込み中... ${Math.round(percent)}%`
+                            );
+
+                        } else {
+
+                            setProgress(
+                                0,
+                                "モデルを読み込んでいます..."
+                            );
+                        }
+                    }
                 }
             );
 
 
         console.log(
-            "SD-Turbo load result:",
+            "Model loaded:",
             loadResult
         );
 
@@ -397,26 +460,31 @@ async function initializeAI() {
 
         modelLoaded = true;
 
+
         if (modelStatus) {
 
             modelStatus.textContent =
                 "SD-Turbo準備完了";
         }
 
+
         setProgress(
             100,
             "100%"
         );
+
 
         setStatus(
             "AIモデルの準備が完了しました",
             "ready"
         );
 
+
         updateButtons();
 
+
         console.log(
-            "SD-Turbo is ready."
+            "AI model is ready."
         );
 
     } catch (error) {
@@ -426,13 +494,16 @@ async function initializeAI() {
             error
         );
 
+
         modelLoaded = false;
+
 
         if (webgpuStatus) {
 
             webgpuStatus.textContent =
-                "利用できません";
+                "エラー";
         }
+
 
         if (modelStatus) {
 
@@ -440,15 +511,18 @@ async function initializeAI() {
                 "読み込み失敗";
         }
 
+
         setProgress(
             0,
             "読み込みに失敗しました"
         );
 
+
         setStatus(
             `AIモデルを読み込めませんでした: ${error.message}`,
             "error"
         );
+
 
         updateButtons();
     }
@@ -456,7 +530,7 @@ async function initializeAI() {
 
 
 /* =========================================================
-   Generate image
+   Generate
    ========================================================= */
 
 async function generateImageFromPrompt() {
@@ -464,6 +538,7 @@ async function generateImageFromPrompt() {
     if (generating) {
         return;
     }
+
 
     if (!modelLoaded) {
 
@@ -498,7 +573,6 @@ async function generateImageFromPrompt() {
 
 
     if (seedInput) {
-
         seedInput.value =
             seed;
     }
@@ -513,6 +587,7 @@ async function generateImageFromPrompt() {
         "画像を生成しています...",
         "generating"
     );
+
 
     setProgress(
         0,
@@ -534,23 +609,16 @@ async function generateImageFromPrompt() {
     }
 
 
-    /*
-     * Previous image URL is no longer needed.
-     */
     if (currentImageURL) {
 
         URL.revokeObjectURL(
             currentImageURL
         );
 
-        currentImageURL =
-            null;
+        currentImageURL = null;
     }
 
 
-    /*
-     * Direct API supports AbortController.
-     */
     currentAbortController =
         new AbortController();
 
@@ -558,11 +626,17 @@ async function generateImageFromPrompt() {
     try {
 
         console.log(
-            "Generating image:",
-            {
-                prompt,
-                seed
-            }
+            "Starting image generation..."
+        );
+
+        console.log(
+            "Prompt:",
+            prompt
+        );
+
+        console.log(
+            "Seed:",
+            seed
         );
 
 
@@ -571,9 +645,9 @@ async function generateImageFromPrompt() {
 
                 model: "sd-turbo",
 
-                prompt,
+                prompt: prompt,
 
-                seed,
+                seed: seed,
 
                 width: 512,
 
@@ -590,46 +664,32 @@ async function generateImageFromPrompt() {
                     );
 
 
-                    let percent = null;
+                    let percent =
+                        event?.pct;
 
 
                     if (
-                        typeof event?.pct ===
+                        typeof percent !==
                         "number"
                     ) {
 
                         percent =
-                            event.pct;
+                            event?.progress;
                     }
 
 
                     if (
-                        percent === null &&
-                        typeof event?.progress ===
+                        typeof percent ===
                         "number"
                     ) {
 
-                        percent =
-                            event.progress;
-                    }
+                        if (
+                            percent >= 0 &&
+                            percent <= 1
+                        ) {
+                            percent *= 100;
+                        }
 
-
-                    /*
-                     * Normalize 0-1 to 0-100.
-                     */
-                    if (
-                        percent !== null &&
-                        percent >= 0 &&
-                        percent <= 1
-                    ) {
-
-                        percent *= 100;
-                    }
-
-
-                    if (
-                        percent !== null
-                    ) {
 
                         setProgress(
                             percent,
@@ -641,7 +701,7 @@ async function generateImageFromPrompt() {
                     ) {
 
                         setStatus(
-                            `画像を生成しています... ${event.phase}`,
+                            `生成中... ${event.phase}`,
                             "generating"
                         );
                     }
@@ -655,9 +715,10 @@ async function generateImageFromPrompt() {
         );
 
 
-        /*
-         * Cancelled.
-         */
+        /* -----------------------------------------
+           Cancelled
+           ----------------------------------------- */
+
         if (
             result?.ok === false &&
             (
@@ -673,18 +734,21 @@ async function generateImageFromPrompt() {
                 "loading"
             );
 
+
             setProgress(
                 0,
                 "キャンセルしました"
             );
 
+
             return;
         }
 
 
-        /*
-         * Failed.
-         */
+        /* -----------------------------------------
+           Error
+           ----------------------------------------- */
+
         if (
             result?.ok === false
         ) {
@@ -696,13 +760,14 @@ async function generateImageFromPrompt() {
         }
 
 
-        /*
-         * Blob -> Object URL
-         */
+        /* -----------------------------------------
+           Blob
+           ----------------------------------------- */
+
         if (!result?.blob) {
 
             throw new Error(
-                "画像データを取得できませんでした。"
+                "画像データがありません。"
             );
         }
 
@@ -714,7 +779,7 @@ async function generateImageFromPrompt() {
 
 
         /* -----------------------------------------
-           Display
+           Show image
            ----------------------------------------- */
 
         if (resultImage) {
@@ -759,35 +824,28 @@ async function generateImageFromPrompt() {
 
         addHistoryItem({
 
-            prompt,
+            prompt: prompt,
 
-            seed,
+            seed: seed,
 
-            image:
-                currentImageURL,
-
-            createdAt:
-                Date.now()
+            image: currentImageURL
         });
 
 
         saveHistoryMetadata({
 
-            prompt,
+            prompt: prompt,
 
-            seed,
+            seed: seed,
 
-            createdAt:
-                Date.now()
+            createdAt: Date.now()
         });
 
 
         console.log(
-            "Generation completed.",
-            result.timeMs
-                ? `${Math.round(result.timeMs)} ms`
-                : ""
+            "Image generation completed."
         );
+
 
     } catch (error) {
 
@@ -799,16 +857,14 @@ async function generateImageFromPrompt() {
 
         if (
             error?.name ===
-            "AbortError" ||
-            error?.message
-                ?.toLowerCase()
-                .includes("abort")
+            "AbortError"
         ) {
 
             setStatus(
                 "画像生成をキャンセルしました。",
                 "loading"
             );
+
 
             setProgress(
                 0,
@@ -822,11 +878,13 @@ async function generateImageFromPrompt() {
                 "error"
             );
 
+
             setProgress(
                 0,
                 "生成失敗"
             );
         }
+
 
     } finally {
 
@@ -851,13 +909,12 @@ function cancelGeneration() {
     }
 
 
-    if (
-        currentAbortController
-    ) {
+    if (currentAbortController) {
 
         console.log(
             "Cancelling generation..."
         );
+
 
         currentAbortController.abort();
     }
@@ -867,6 +924,7 @@ function cancelGeneration() {
         "画像生成をキャンセルしています...",
         "loading"
     );
+
 
     setProgress(
         0,
@@ -911,7 +969,7 @@ function downloadCurrentImage() {
 
 
 /* =========================================================
-   History metadata
+   History
    ========================================================= */
 
 function loadHistoryMetadata() {
@@ -960,13 +1018,11 @@ function saveHistoryMetadata(item) {
         history.unshift(item);
 
 
-        const trimmed =
-            history.slice(0, 30);
-
-
         localStorage.setItem(
             HISTORY_KEY,
-            JSON.stringify(trimmed)
+            JSON.stringify(
+                history.slice(0, 30)
+            )
         );
 
     } catch (error) {
@@ -979,10 +1035,6 @@ function saveHistoryMetadata(item) {
 }
 
 
-/* =========================================================
-   Visible history
-   ========================================================= */
-
 function addHistoryItem(item) {
 
     if (!historyElement) {
@@ -993,6 +1045,7 @@ function addHistoryItem(item) {
     const card =
         document.createElement("div");
 
+
     card.className =
         "history-item";
 
@@ -1000,31 +1053,38 @@ function addHistoryItem(item) {
     const image =
         document.createElement("img");
 
+
     image.src =
         item.image;
 
+
     image.alt =
         item.prompt;
+
 
     image.loading =
         "lazy";
 
 
-    const text =
+    const prompt =
         document.createElement("div");
 
-    text.className =
+
+    prompt.className =
         "history-prompt";
 
-    text.textContent =
+
+    prompt.textContent =
         item.prompt;
 
 
     const seed =
         document.createElement("div");
 
+
     seed.className =
         "history-seed";
+
 
     seed.textContent =
         `Seed: ${item.seed}`;
@@ -1034,9 +1094,11 @@ function addHistoryItem(item) {
         image
     );
 
+
     card.appendChild(
-        text
+        prompt
     );
+
 
     card.appendChild(
         seed
@@ -1048,23 +1110,15 @@ function addHistoryItem(item) {
     );
 
 
-    /*
-     * Keep visible history small.
-     */
     while (
         historyElement.children.length >
         20
     ) {
 
-        historyElement.lastElementChild
-            ?.remove();
+        historyElement.lastElementChild?.remove();
     }
 }
 
-
-/* =========================================================
-   Clear history
-   ========================================================= */
 
 function clearHistory() {
 
@@ -1114,8 +1168,8 @@ function setupQuickPrompts() {
 
 
                 if (
-                    !value ||
-                    !promptInput
+                    !promptInput ||
+                    !value
                 ) {
                     return;
                 }
@@ -1152,7 +1206,7 @@ function setupTheme() {
             );
 
 
-            const dark =
+            const isDark =
                 document.body.classList.contains(
                     "dark"
                 );
@@ -1160,7 +1214,7 @@ function setupTheme() {
 
             localStorage.setItem(
                 THEME_KEY,
-                dark
+                isDark
                     ? "dark"
                     : "light"
             );
@@ -1168,13 +1222,11 @@ function setupTheme() {
     );
 
 
-    const saved =
+    if (
         localStorage.getItem(
             THEME_KEY
-        );
-
-
-    if (saved === "dark") {
+        ) === "dark"
+    ) {
 
         document.body.classList.add(
             "dark"
@@ -1213,9 +1265,6 @@ function setupEvents() {
     );
 
 
-    /*
-     * Ctrl + Enter
-     */
     promptInput?.addEventListener(
         "keydown",
         event => {
@@ -1229,8 +1278,8 @@ function setupEvents() {
 
 
                 if (
-                    !generating &&
-                    modelLoaded
+                    modelLoaded &&
+                    !generating
                 ) {
 
                     generateImageFromPrompt();
@@ -1253,21 +1302,18 @@ async function start() {
 
 
     if (generateButton) {
-
         generateButton.disabled =
             true;
     }
 
 
     if (cancelButton) {
-
         cancelButton.disabled =
             true;
     }
 
 
     if (downloadButton) {
-
         downloadButton.disabled =
             true;
     }
@@ -1280,9 +1326,6 @@ async function start() {
     setupQuickPrompts();
 
 
-    /*
-     * Initial seed
-     */
     if (seedInput) {
 
         const value =
@@ -1294,14 +1337,11 @@ async function start() {
         ) {
 
             seedInput.value =
-                randomSeed();
+                createRandomSeed();
         }
     }
 
 
-    /*
-     * Existing metadata
-     */
     const history =
         loadHistoryMetadata();
 
@@ -1311,15 +1351,12 @@ async function start() {
     );
 
 
-    /*
-     * Start AI
-     */
     await initializeAI();
 }
 
 
 /* =========================================================
-   Global errors
+   Global error handlers
    ========================================================= */
 
 window.addEventListener(
