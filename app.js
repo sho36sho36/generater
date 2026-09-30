@@ -1,7 +1,23 @@
-import {
-    Txt2ImgWorkerClient
-} from "web-txt2img";
+import { Txt2ImgWorkerClient } from "web-txt2img";
+import { env } from "@xenova/transformers";
 
+
+// ============================================================
+// Transformers.js設定
+// ============================================================
+
+env.allowLocalModels = false;
+env.allowRemoteModels = true;
+
+env.remoteHost = "https://huggingface.co/";
+env.remotePathTemplate = "{model}/resolve/{revision}/";
+
+env.useBrowserCache = true;
+
+
+// ============================================================
+// DOM
+// ============================================================
 
 const promptInput =
     document.getElementById("prompt");
@@ -16,55 +32,13 @@ const stepsInput =
     document.getElementById("steps");
 
 const generateButton =
-    document.getElementById("generateButton");
+    document.getElementById("generate");
 
 const cancelButton =
-    document.getElementById("cancelButton");
-
-const regenerateButton =
-    document.getElementById("regenerateButton");
+    document.getElementById("cancel");
 
 const downloadButton =
     document.getElementById("downloadButton");
-
-const randomSeedButton =
-    document.getElementById("randomSeed");
-
-const resultImage =
-    document.getElementById("resultImage");
-
-const emptyState =
-    document.getElementById("emptyState");
-
-const loading =
-    document.getElementById("loading");
-
-const loadingText =
-    document.getElementById("loadingText");
-
-const status =
-    document.getElementById("status");
-
-const resultInfo =
-    document.getElementById("resultInfo");
-
-const progressContainer =
-    document.getElementById("progressContainer");
-
-const progressBar =
-    document.getElementById("progressBar");
-
-const progressText =
-    document.getElementById("progressText");
-
-const progressPercent =
-    document.getElementById("progressPercent");
-
-const gpuStatus =
-    document.getElementById("gpuStatus");
-
-const historyElement =
-    document.getElementById("history");
 
 const clearHistoryButton =
     document.getElementById("clearHistory");
@@ -72,241 +46,353 @@ const clearHistoryButton =
 const themeButton =
     document.getElementById("themeButton");
 
+const progressBar =
+    document.getElementById("progressBar");
+
+const progressText =
+    document.getElementById("progressText");
+
+const statusText =
+    document.getElementById("status");
+
+const statusBadge =
+    document.getElementById("statusBadge");
+
+const webgpuStatus =
+    document.getElementById("webgpuStatus");
+
+const modelStatus =
+    document.getElementById("modelStatus");
+
+const resultImage =
+    document.getElementById("resultImage");
+
+const resultPlaceholder =
+    document.getElementById("resultPlaceholder");
+
+const historyElement =
+    document.getElementById("history");
+
+
+// ============================================================
+// 状態
+// ============================================================
 
 let client = null;
+
+let modelLoaded = false;
+
+let generating = false;
 
 let currentAbort = null;
 
 let currentImageURL = null;
 
-let lastOptions = null;
 
+// ============================================================
+// UI
+// ============================================================
 
-/*
- * ---------------------------------
- * テーマ
- * ---------------------------------
- */
+function setProgress(percent, message) {
 
-function loadTheme() {
-
-    const theme =
-        localStorage.getItem(
-            "dreamcanvas-theme"
-        );
-
-    if (theme === "dark") {
-        document.body.classList.add("dark");
-    }
-}
-
-
-themeButton.addEventListener(
-    "click",
-    () => {
-
-        document.body.classList.toggle(
-            "dark"
-        );
-
-        localStorage.setItem(
-            "dreamcanvas-theme",
-            document.body.classList.contains("dark")
-                ? "dark"
-                : "light"
-        );
-    }
-);
-
-
-/*
- * ---------------------------------
- * Progress
- * ---------------------------------
- */
-
-function setProgress(progress = {}) {
-
-    const pct =
-        typeof progress.pct === "number"
-            ? Math.max(
-                0,
-                Math.min(
-                    100,
-                    progress.pct
-                )
+    const value =
+        Math.max(
+            0,
+            Math.min(
+                100,
+                Number(percent) || 0
             )
-            : null;
+        );
 
-
-    if (pct !== null) {
-
-        progressBar.style.width =
-            `${pct}%`;
-
-        progressPercent.textContent =
-            `${Math.round(pct)}%`;
-    }
-
-
-    let message =
-        progress.message ||
-        progress.phase ||
-        "処理中...";
-
-
-    if (
-        progress.bytesDownloaded != null &&
-        progress.totalBytesExpected != null
-    ) {
-
-        const downloaded =
-            progress.bytesDownloaded /
-            1024 /
-            1024;
-
-        const total =
-            progress.totalBytesExpected /
-            1024 /
-            1024;
-
-        message +=
-            ` (${downloaded.toFixed(1)} / ${total.toFixed(1)} MB)`;
-    }
-
+    progressBar.value = value;
 
     progressText.textContent =
-        message;
+        `${Math.round(value)}%`;
 
-    loadingText.textContent =
-        message;
+    if (message) {
+        statusText.textContent =
+            message;
+    }
 }
 
 
-/*
- * ---------------------------------
- * WebGPU
- * ---------------------------------
- */
+function setBadge(type, text) {
 
-async function initialize() {
+    statusBadge.className =
+        `badge ${type}`;
 
-    loadTheme();
+    statusBadge.textContent =
+        text;
+}
+
+
+function setModelStatus(text) {
+
+    modelStatus.textContent =
+        text;
+}
+
+
+// ============================================================
+// WebGPU
+// ============================================================
+
+async function checkWebGPU() {
+
+    if (!("gpu" in navigator)) {
+
+        webgpuStatus.textContent =
+            "利用不可";
+
+        throw new Error(
+            "このブラウザではWebGPUが利用できません。"
+        );
+    }
 
     try {
+
+        const adapter =
+            await navigator.gpu.requestAdapter();
+
+        if (!adapter) {
+
+            webgpuStatus.textContent =
+                "利用不可";
+
+            throw new Error(
+                "WebGPUアダプターを取得できませんでした。"
+            );
+        }
+
+        webgpuStatus.textContent =
+            "利用可能";
+
+        return true;
+
+    } catch (error) {
+
+        webgpuStatus.textContent =
+            "エラー";
+
+        throw error;
+    }
+}
+
+
+// ============================================================
+// AIモデル初期化
+// ============================================================
+
+async function initializeAI() {
+
+    try {
+
+        setBadge(
+            "loading",
+            "準備中"
+        );
+
+        setModelStatus(
+            "WebGPUを確認中..."
+        );
+
+        setProgress(
+            0,
+            "WebGPUを確認しています..."
+        );
+
+
+        // ----------------------------------------------------
+        // WebGPU
+        // ----------------------------------------------------
+
+        await checkWebGPU();
+
+
+        setModelStatus(
+            "AIモデル読み込み中..."
+        );
+
+        setProgress(
+            0,
+            "AIモデルを読み込んでいます..."
+        );
+
+
+        // ----------------------------------------------------
+        // Worker Client
+        // ----------------------------------------------------
 
         client =
             Txt2ImgWorkerClient.createDefault();
 
 
+        // ----------------------------------------------------
+        // capability detection
+        // ----------------------------------------------------
+
         const caps =
             await client.detect();
 
-
-        if (caps.webgpu) {
-
-            gpuStatus.innerHTML = `
-                <span class="status-dot ok"></span>
-                WebGPU利用可能
-            `;
-
-            status.textContent =
-                "WebGPUを利用できます。";
+        console.log(
+            "WebGPU capabilities:",
+            caps
+        );
 
 
-        } else {
+        if (!caps.webgpu) {
 
-            gpuStatus.innerHTML = `
-                <span class="status-dot error"></span>
-                WebGPU未対応
-            `;
-
-            status.textContent =
-                "WebGPUに対応したブラウザが必要です。";
-
-            generateButton.disabled =
-                true;
+            throw new Error(
+                "web-txt2imgからWebGPUが利用できないと判定されました。"
+            );
         }
 
 
+        // ----------------------------------------------------
+        // SD-Turboロード
+        // ----------------------------------------------------
+
+        console.log(
+            "Loading SD-Turbo..."
+        );
+
+
+        const loadResult =
+            await client.load(
+                "sd-turbo",
+                {
+                    backendPreference: [
+                        "webgpu"
+                    ]
+                },
+                (progress) => {
+
+                    console.log(
+                        "MODEL LOAD:",
+                        progress
+                    );
+
+
+                    if (
+                        progress &&
+                        typeof progress.pct === "number"
+                    ) {
+
+                        setProgress(
+                            progress.pct,
+                            progress.message ||
+                            `AIモデル読み込み中... ${Math.round(progress.pct)}%`
+                        );
+
+                    } else {
+
+                        setProgress(
+                            0,
+                            progress?.message ||
+                            "AIモデルを読み込んでいます..."
+                        );
+                    }
+                }
+            );
+
+
+        console.log(
+            "Model load result:",
+            loadResult
+        );
+
+
+        if (
+            !loadResult ||
+            loadResult.ok === false
+        ) {
+
+            throw new Error(
+                loadResult?.message ||
+                loadResult?.reason ||
+                "AIモデルの読み込みに失敗しました。"
+            );
+        }
+
+
+        // ----------------------------------------------------
+        // 完了
+        // ----------------------------------------------------
+
+        modelLoaded = true;
+
+        generateButton.disabled =
+            false;
+
+        setModelStatus(
+            "SD-Turbo 準備完了"
+        );
+
+        setBadge(
+            "ready",
+            "準備完了"
+        );
+
+        setProgress(
+            100,
+            "AIモデルの準備が完了しました！"
+        );
+
+
+        console.log(
+            "SD-Turbo ready."
+        );
+
     } catch (error) {
 
-        console.error(error);
+        console.error(
+            "Initialization error:",
+            error
+        );
 
-        gpuStatus.innerHTML = `
-            <span class="status-dot error"></span>
-            確認失敗
-        `;
 
-        status.textContent =
-            "WebGPUの確認に失敗しました。";
+        modelLoaded = false;
 
         generateButton.disabled =
             true;
+
+        setBadge(
+            "error",
+            "エラー"
+        );
+
+        setModelStatus(
+            "読み込み失敗"
+        );
+
+        setProgress(
+            0,
+            `エラー: ${error.message || error}`
+        );
     }
-
-
-    renderHistory();
 }
 
 
-/*
- * ---------------------------------
- * Model Loading
- * ---------------------------------
- */
+// ============================================================
+// 画像生成
+// ============================================================
 
-async function loadModel() {
+async function generateImage() {
 
-    setProgress({
-        pct: 0,
-        message: "AIモデルを準備しています..."
-    });
-
-
-    progressContainer.classList.remove(
-        "hidden"
-    );
-
-
-    const result =
-        await client.load(
-            "sd-turbo",
-            {
-                backendPreference: [
-                    "webgpu"
-                ]
-            },
-            setProgress
-        );
-
-
-    if (!result?.ok) {
-
-        throw new Error(
-            result?.message ||
-            "AIモデルの読み込みに失敗しました。"
-        );
+    if (generating) {
+        return;
     }
 
 
-    setProgress({
-        pct: 100,
-        message: "AIモデルの準備完了"
-    });
+    if (!modelLoaded) {
 
+        alert(
+            "AIモデルの準備が完了していません。"
+        );
 
-    return result;
-}
+        return;
+    }
 
-
-/*
- * ---------------------------------
- * Generate
- * ---------------------------------
- */
-
-async function generate() {
 
     const prompt =
         promptInput.value.trim();
@@ -314,172 +400,141 @@ async function generate() {
 
     if (!prompt) {
 
-        status.textContent =
-            "プロンプトを入力してください。";
-
-        promptInput.focus();
-
-        return;
-    }
-
-
-    if (!client) {
-
-        status.textContent =
-            "AIエンジンを初期化しています。";
+        alert(
+            "プロンプトを入力してください。"
+        );
 
         return;
     }
 
 
-    if (!navigator.gpu) {
-
-        status.textContent =
-            "このブラウザではWebGPUを利用できません。";
-
-        return;
-    }
-
-
-    const seed =
-        Number(seedInput.value);
-
-
-    lastOptions = {
-
-        prompt,
-
-        negativePrompt:
-            negativePromptInput.value.trim(),
-
-        seed:
-            Number.isFinite(seed)
-                ? seed
-                : Math.floor(
-                    Math.random() * 2147483647
-                ),
-
-        steps:
-            Number(stepsInput.value)
-    };
-
+    generating = true;
 
     generateButton.disabled =
         true;
 
-    regenerateButton.disabled =
-        true;
+    cancelButton.disabled =
+        false;
 
-    cancelButton.classList.remove(
-        "hidden"
-    );
 
-    loading.classList.remove(
-        "hidden"
-    );
-
-    emptyState.style.display =
-        "none";
-
-    progressContainer.classList.remove(
-        "hidden"
+    setProgress(
+        0,
+        "画像生成を開始しています..."
     );
 
 
     try {
 
-        /*
-         * 初回だけモデルを読み込む。
-         */
+        // ----------------------------------------------------
+        // Seed
+        // ----------------------------------------------------
 
-        if (!client._dreamCanvasLoaded) {
+        let seed;
 
-            status.textContent =
-                "初回起動：AIモデルを読み込んでいます...";
+        const seedText =
+            seedInput.value.trim();
 
-            await loadModel();
 
-            client._dreamCanvasLoaded =
-                true;
+        if (seedText !== "") {
+
+            const parsed =
+                Number(seedText);
+
+            if (
+                !Number.isFinite(parsed)
+            ) {
+
+                throw new Error(
+                    "Seedは数字で入力してください。"
+                );
+            }
+
+            seed = parsed;
         }
 
 
-        status.textContent =
-            "画像を生成しています...";
+        console.log(
+            "Prompt:",
+            prompt
+        );
+
+        console.log(
+            "Seed:",
+            seed
+        );
 
 
-        setProgress({
-            pct: 0,
-            message: "生成開始..."
-        });
+        // ----------------------------------------------------
+        // Generate
+        // ----------------------------------------------------
 
-
-        /*
-         * SD-Turboは512x512。
-         */
-
-        const request = {
-
-            prompt:
-                lastOptions.prompt,
-
-            seed:
-                lastOptions.seed,
-
-            width: 512,
-
-            height: 512
-        };
-
-
-        /*
-         * ネガティブプロンプトは
-         * 現在のSD-Turbo APIの
-         * 基本パラメータには含まれないため、
-         * ここではpromptだけを渡します。
-         */
-
-        const generated =
+        const request =
             client.generate(
-                request,
+                {
+                    prompt: prompt,
 
-                event => {
+                    seed: seed,
 
-                    setProgress({
-                        ...event,
+                    width: 512,
 
-                        message:
-                            `生成: ${
-                                event.phase ||
-                                event.message ||
-                                "処理中"
-                            }`
-                    });
+                    height: 512
                 },
 
-                {
-                    busyPolicy:
-                        "queue",
+                (progress) => {
 
-                    debounceMs:
-                        100
+                    console.log(
+                        "GENERATION:",
+                        progress
+                    );
+
+
+                    if (
+                        progress &&
+                        typeof progress.pct === "number"
+                    ) {
+
+                        setProgress(
+                            progress.pct,
+                            progress.phase
+                                ? `生成中: ${progress.phase}`
+                                : `画像生成中... ${Math.round(progress.pct)}%`
+                        );
+
+                    } else {
+
+                        setProgress(
+                            0,
+                            progress?.phase
+                                ? `生成中: ${progress.phase}`
+                                : "画像生成中..."
+                        );
+                    }
                 }
             );
 
 
         currentAbort =
-            generated.abort;
+            request.abort;
 
+
+        // ----------------------------------------------------
+        // 完了待ち
+        // ----------------------------------------------------
 
         const result =
-            await generated.promise;
+            await request.promise;
 
 
-        currentAbort =
-            null;
+        console.log(
+            "Generation result:",
+            result
+        );
 
 
-        if (!result?.ok) {
+        if (
+            !result ||
+            result.ok === false
+        ) {
 
             throw new Error(
                 result?.message ||
@@ -489,10 +544,19 @@ async function generate() {
         }
 
 
-        /*
-         * 古いBlob URLを解放。
-         */
+        // ----------------------------------------------------
+        // Blob
+        // ----------------------------------------------------
 
+        if (!result.blob) {
+
+            throw new Error(
+                "生成された画像データがありません。"
+            );
+        }
+
+
+        // 古いURLを解放
         if (currentImageURL) {
 
             URL.revokeObjectURL(
@@ -513,33 +577,25 @@ async function generate() {
         resultImage.style.display =
             "block";
 
-
-        resultInfo.textContent =
-            `512 × 512 / Seed ${lastOptions.seed}`;
+        resultPlaceholder.style.display =
+            "none";
 
 
         downloadButton.disabled =
             false;
 
-        regenerateButton.disabled =
-            false;
 
-
-        status.textContent =
-            `生成完了 ${
-                Math.round(
-                    result.timeMs || 0
-                )
-            } ms`;
-
-
-        saveHistory(
-            currentImageURL,
-            lastOptions
+        setProgress(
+            100,
+            `生成完了！`
         );
 
 
-        renderHistory();
+        // 履歴
+        await addHistory(
+            currentImageURL,
+            prompt
+        );
 
 
     } catch (error) {
@@ -550,213 +606,126 @@ async function generate() {
         );
 
 
-        status.textContent =
-            `エラー: ${
-                error.message ||
-                error
-            }`;
+        setProgress(
+            0,
+            `生成エラー: ${error.message || error}`
+        );
 
 
     } finally {
 
-        currentAbort =
-            null;
+        generating = false;
+
+        currentAbort = null;
 
         generateButton.disabled =
-            false;
+            !modelLoaded;
 
-        cancelButton.classList.add(
-            "hidden"
-        );
-
-        loading.classList.add(
-            "hidden"
-        );
-
-        progressContainer.classList.add(
-            "hidden"
-        );
+        cancelButton.disabled =
+            true;
     }
 }
 
 
-generateButton.addEventListener(
-    "click",
-    generate
-);
+// ============================================================
+// キャンセル
+// ============================================================
 
+async function cancelGeneration() {
 
-regenerateButton.addEventListener(
-    "click",
-    generate
-);
-
-
-/*
- * Ctrl + Enter
- */
-
-promptInput.addEventListener(
-    "keydown",
-    event => {
-
-        if (
-            event.ctrlKey &&
-            event.key === "Enter"
-        ) {
-
-            generate();
-        }
+    if (!currentAbort) {
+        return;
     }
-);
 
 
-/*
- * ---------------------------------
- * Cancel
- * ---------------------------------
- */
+    try {
 
-cancelButton.addEventListener(
-    "click",
-    async () => {
+        await currentAbort();
 
-        if (!currentAbort) {
-            return;
-        }
+    } catch (error) {
+
+        console.warn(
+            "Cancel error:",
+            error
+        );
+    }
 
 
-        try {
+    currentAbort = null;
 
-            await currentAbort();
+    generating = false;
 
-        } catch (error) {
+    generateButton.disabled =
+        !modelLoaded;
 
-            console.warn(
-                "Abort error:",
-                error
-            );
-        }
+    cancelButton.disabled =
+        true;
 
 
-        currentAbort =
-            null;
+    setProgress(
+        0,
+        "生成をキャンセルしました。"
+    );
+}
 
-        status.textContent =
-            "生成を中止しました。";
 
-        cancelButton.classList.add(
-            "hidden"
+// ============================================================
+// ダウンロード
+// ============================================================
+
+async function downloadImage() {
+
+    if (!currentImageURL) {
+        return;
+    }
+
+
+    const response =
+        await fetch(
+            currentImageURL
         );
 
-        loading.classList.add(
-            "hidden"
-        );
 
-        generateButton.disabled =
-            false;
-    }
-);
+    const blob =
+        await response.blob();
 
 
-/*
- * ---------------------------------
- * Random Seed
- * ---------------------------------
- */
-
-randomSeedButton.addEventListener(
-    "click",
-    () => {
-
-        seedInput.value =
-            Math.floor(
-                Math.random() *
-                2147483647
-            );
-    }
-);
+    const url =
+        URL.createObjectURL(blob);
 
 
-/*
- * ---------------------------------
- * Download
- * ---------------------------------
- */
-
-downloadButton.addEventListener(
-    "click",
-    () => {
-
-        if (!currentImageURL) {
-            return;
-        }
+    const a =
+        document.createElement("a");
 
 
-        const link =
-            document.createElement("a");
+    a.href = url;
+
+    a.download =
+        `generated-${Date.now()}.png`;
 
 
-        const safeName =
-            (
-                lastOptions?.prompt ||
-                "generated-image"
-            )
-                .replace(
-                    /[\\/:*?"<>|]/g,
-                    "_"
-                )
-                .slice(
-                    0,
-                    50
-                );
+    document.body.appendChild(a);
+
+    a.click();
+
+    a.remove();
 
 
-        link.href =
-            currentImageURL;
-
-        link.download =
-            `${safeName}.png`;
-
-        link.click();
-    }
-);
+    URL.revokeObjectURL(url);
+}
 
 
-/*
- * ---------------------------------
- * Quick Prompts
- * ---------------------------------
- */
+// ============================================================
+// 履歴
+// ============================================================
 
-document
-    .querySelectorAll(
-        ".quick-prompts button"
-    )
-    .forEach(button => {
-
-        button.addEventListener(
-            "click",
-            () => {
-
-                promptInput.value =
-                    button.dataset.prompt;
-
-                promptInput.focus();
-            }
-        );
-    });
+const HISTORY_KEY =
+    "ai-image-generator-history";
 
 
-/*
- * ---------------------------------
- * History
- * ---------------------------------
- */
-
-async function saveHistory(
+async function addHistory(
     imageURL,
-    options
+    prompt
 ) {
 
     try {
@@ -772,85 +741,47 @@ async function saveHistory(
             new FileReader();
 
 
-        reader.onload = () => {
+        reader.onload =
+            () => {
 
-            const item = {
-
-                image:
-                    reader.result,
-
-                prompt:
-                    options.prompt,
-
-                seed:
-                    options.seed,
-
-                date:
-                    Date.now()
-            };
+                const history =
+                    getHistory();
 
 
-            let history =
-                getHistory();
+                history.unshift({
+                    image:
+                        reader.result,
+
+                    prompt:
+                        prompt,
+
+                    time:
+                        Date.now()
+                });
 
 
-            history.unshift(
-                item
-            );
-
-
-            history =
-                history.slice(
-                    0,
-                    8
+                // 最大6件
+                history.splice(
+                    6
                 );
 
 
-            try {
-
                 localStorage.setItem(
-                    "dreamcanvas-history",
+                    HISTORY_KEY,
                     JSON.stringify(history)
                 );
 
-            } catch {
 
-                /*
-                 * 容量不足なら
-                 * 古い履歴を削る。
-                 */
-
-                history =
-                    history.slice(
-                        0,
-                        3
-                    );
+                renderHistory();
+            };
 
 
-                try {
-
-                    localStorage.setItem(
-                        "dreamcanvas-history",
-                        JSON.stringify(history)
-                    );
-
-                } catch {
-                    console.warn(
-                        "履歴を保存できませんでした。"
-                    );
-                }
-            }
-        };
-
-
-        reader.readAsDataURL(
-            blob
-        );
+        reader.readAsDataURL(blob);
 
     } catch (error) {
 
         console.warn(
-            "History save failed:",
+            "History error:",
             error
         );
     }
@@ -863,7 +794,7 @@ function getHistory() {
 
         return JSON.parse(
             localStorage.getItem(
-                "dreamcanvas-history"
+                HISTORY_KEY
             ) || "[]"
         );
 
@@ -884,13 +815,10 @@ function renderHistory() {
         "";
 
 
-    if (!history.length) {
+    if (history.length === 0) {
 
-        historyElement.innerHTML = `
-            <div class="history-empty">
-                生成履歴はありません
-            </div>
-        `;
+        historyElement.innerHTML =
+            "<p>まだ履歴はありません。</p>";
 
         return;
     }
@@ -900,73 +828,41 @@ function renderHistory() {
         const item of history
     ) {
 
-        const element =
+        const wrapper =
             document.createElement(
                 "div"
             );
 
 
-        element.className =
+        wrapper.className =
             "history-item";
 
 
-        element.innerHTML = `
-            <img
-                src="${item.image}"
-                alt="生成画像"
-            >
-
-            <div class="history-item-info">
-                ${escapeHTML(item.prompt)}
-            </div>
-        `;
+        const img =
+            document.createElement(
+                "img"
+            );
 
 
-        element.addEventListener(
-            "click",
-            () => {
-
-                resultImage.src =
-                    item.image;
-
-                resultImage.style.display =
-                    "block";
-
-                emptyState.style.display =
-                    "none";
-
-                resultInfo.textContent =
-                    `512 × 512 / Seed ${item.seed}`;
-
-                downloadButton.disabled =
-                    false;
-
-                promptInput.value =
-                    item.prompt;
-
-                seedInput.value =
-                    item.seed;
-
-                lastOptions = {
-                    prompt:
-                        item.prompt,
-
-                    seed:
-                        item.seed,
-
-                    steps:
-                        1
-                };
+        img.src =
+            item.image;
 
 
-                status.textContent =
-                    "履歴から読み込みました";
-            }
+        img.alt =
+            item.prompt;
+
+
+        img.title =
+            item.prompt;
+
+
+        wrapper.appendChild(
+            img
         );
 
 
         historyElement.appendChild(
-            element
+            wrapper
         );
     }
 }
@@ -976,70 +872,114 @@ clearHistoryButton.addEventListener(
     "click",
     () => {
 
-        if (
-            !confirm(
-                "生成履歴をすべて削除しますか？"
-            )
-        ) {
-            return;
-        }
-
-
         localStorage.removeItem(
-            "dreamcanvas-history"
+            HISTORY_KEY
         );
 
-
         renderHistory();
-
-
-        status.textContent =
-            "履歴を削除しました";
     }
 );
 
 
-/*
- * ---------------------------------
- * HTML Escape
- * ---------------------------------
- */
+// ============================================================
+// クイックプロンプト
+// ============================================================
 
-function escapeHTML(value) {
+document
+    .querySelectorAll(
+        ".quick-prompt"
+    )
+    .forEach(button => {
 
-    return String(value)
+        button.addEventListener(
+            "click",
+            () => {
 
-        .replaceAll(
-            "&",
-            "&amp;"
-        )
+                promptInput.value =
+                    button.dataset.prompt;
 
-        .replaceAll(
-            "<",
-            "&lt;"
-        )
-
-        .replaceAll(
-            ">",
-            "&gt;"
-        )
-
-        .replaceAll(
-            '"',
-            "&quot;"
-        )
-
-        .replaceAll(
-            "'",
-            "&#039;"
+                promptInput.focus();
+            }
         );
+    });
+
+
+// ============================================================
+// テーマ
+// ============================================================
+
+themeButton.addEventListener(
+    "click",
+    () => {
+
+        document.body.classList.toggle(
+            "dark"
+        );
+
+
+        const dark =
+            document.body.classList.contains(
+                "dark"
+            );
+
+
+        themeButton.textContent =
+            dark
+                ? "☀️"
+                : "🌙";
+
+
+        localStorage.setItem(
+            "theme",
+            dark
+                ? "dark"
+                : "light"
+        );
+    }
+);
+
+
+if (
+    localStorage.getItem(
+        "theme"
+    ) === "dark"
+) {
+
+    document.body.classList.add(
+        "dark"
+    );
+
+    themeButton.textContent =
+        "☀️";
 }
 
 
-/*
- * ---------------------------------
- * Start
- * ---------------------------------
- */
+// ============================================================
+// イベント
+// ============================================================
 
-initialize();
+generateButton.addEventListener(
+    "click",
+    generateImage
+);
+
+
+cancelButton.addEventListener(
+    "click",
+    cancelGeneration
+);
+
+
+downloadButton.addEventListener(
+    "click",
+    downloadImage
+);
+
+
+// ============================================================
+// 起動
+// ============================================================
+
+renderHistory();
+
+initializeAI();
