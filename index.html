@@ -2,105 +2,98 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
+
     <meta
         name="viewport"
         content="width=device-width, initial-scale=1.0"
     >
 
-    <meta
-        name="description"
-        content="ブラウザだけで動作するAI画像生成サイト"
-    >
-
-    <title>DreamCanvas - AI Image Generator</title>
+    <title>AI Image Generator</title>
 
     <link rel="stylesheet" href="./style.css">
 </head>
 
 <body>
 
-<header class="header">
-
-    <div class="logo">
-        <div class="logo-mark">✦</div>
-
+    <header class="header">
         <div>
-            <div class="logo-title">
-                DreamCanvas
-            </div>
-
-            <div class="logo-subtitle">
-                Browser AI Image Generator
-            </div>
-        </div>
-    </div>
-
-    <div class="header-actions">
-
-        <div id="gpuStatus" class="gpu-status">
-            <span class="status-dot"></span>
-            WebGPU確認中
+            <h1>AI Image Generator</h1>
+            <p>ブラウザ上でAI画像を生成</p>
         </div>
 
-        <button
-            id="themeButton"
-            class="icon-button"
-            title="テーマ切替"
-        >
-            ◐
+        <button id="themeButton" class="secondary-button">
+            🌙
         </button>
+    </header>
 
-    </div>
+    <main class="container">
 
-</header>
+        <!-- AI状態 -->
+        <section class="card">
 
+            <div class="section-title">
+                <h2>AIモデル</h2>
 
-<main class="container">
-
-    <!-- 左側 -->
-
-    <aside class="sidebar">
-
-        <section class="panel">
-
-            <div class="panel-title">
-                <h1>画像を生成</h1>
-
-                <p>
-                    自由なプロンプトからAI画像を生成します
-                </p>
+                <span id="statusBadge" class="badge loading">
+                    準備中
+                </span>
             </div>
 
+            <div class="model-status">
+
+                <div class="status-row">
+                    <span>WebGPU</span>
+                    <strong id="webgpuStatus">
+                        確認中...
+                    </strong>
+                </div>
+
+                <div class="status-row">
+                    <span>AIモデル</span>
+                    <strong id="modelStatus">
+                        読み込み中...
+                    </strong>
+                </div>
+
+            </div>
+
+            <div class="progress-wrapper">
+
+                <div class="progress-info">
+                    <span id="status">
+                        AIモデルを準備しています...
+                    </span>
+
+                    <span id="progressText">
+                        0%
+                    </span>
+                </div>
+
+                <progress
+                    id="progressBar"
+                    value="0"
+                    max="100"
+                ></progress>
+
+            </div>
+
+        </section>
+
+
+        <!-- プロンプト -->
+        <section class="card">
+
+            <h2>プロンプト</h2>
 
             <label for="prompt">
-                プロンプト
+                画像の内容
             </label>
 
             <textarea
                 id="prompt"
-                placeholder="例：一人の女性、長い黒髪、青いドレス、夕焼けの海辺、映画のワンシーン、highly detailed"
+                rows="5"
+                placeholder="例: A beautiful Japanese woman standing in Tokyo at night, cinematic lighting, highly detailed"
             ></textarea>
-
-
-            <div class="quick-prompts">
-
-                <button data-prompt="a beautiful landscape, mountains, lake, dramatic clouds, cinematic lighting">
-                    🏔️ 風景
-                </button>
-
-                <button data-prompt="a cute cat sitting in a garden, flowers, warm sunlight, detailed">
-                    🐱 猫
-                </button>
-
-                <button data-prompt="a futuristic city at night, neon lights, rainy streets, cyberpunk">
-                    🌃 都市
-                </button>
-
-                <button data-prompt="a fantasy castle on a mountain, sunset, magical atmosphere">
-                    🏰 ファンタジー
-                </button>
-
-            </div>
 
 
             <label for="negativePrompt">
@@ -109,276 +102,177 @@
 
             <textarea
                 id="negativePrompt"
-                class="small-textarea"
-                placeholder="blurry, low quality, distorted"
+                rows="3"
+                placeholder="例: blurry, low quality, distorted"
             ></textarea>
 
 
             <div class="settings-grid">
 
-                <div class="setting">
-
+                <div>
                     <label for="seed">
                         Seed
                     </label>
 
-                    <div class="seed-row">
-
-                        <input
-                            id="seed"
-                            type="number"
-                            value="12345"
-                        >
-
-                        <button
-                            id="randomSeed"
-                            class="small-button"
-                            title="ランダムSeed"
-                        >
-                            🎲
-                        </button>
-
-                    </div>
-
+                    <input
+                        id="seed"
+                        type="number"
+                        placeholder="ランダム"
+                    >
                 </div>
 
-
-                <div class="setting">
-
+                <div>
                     <label for="steps">
                         Steps
                     </label>
 
-                    <select id="steps">
-                        <option value="1" selected>
-                            1 - Turbo
-                        </option>
-
-                        <option value="2">
-                            2
-                        </option>
-
-                        <option value="4">
-                            4
-                        </option>
-                    </select>
-
+                    <input
+                        id="steps"
+                        type="number"
+                        min="1"
+                        max="4"
+                        value="1"
+                    >
                 </div>
 
             </div>
 
 
-            <button
-                id="generateButton"
-                class="generate-button"
-            >
-                <span>✦</span>
-                画像を生成
-            </button>
-
-
-            <button
-                id="cancelButton"
-                class="cancel-button hidden"
-            >
-                生成を中止
-            </button>
-
-
-            <div
-                id="progressContainer"
-                class="progress-container hidden"
-            >
-
-                <div class="progress-info">
-
-                    <span id="progressText">
-                        準備中...
-                    </span>
-
-                    <span id="progressPercent">
-                        0%
-                    </span>
-
-                </div>
-
-                <div class="progress-bar">
-                    <div
-                        id="progressBar"
-                        class="progress-value"
-                    ></div>
-                </div>
-
-            </div>
-
-
-            <div
-                id="status"
-                class="status"
-            >
-                WebGPUを確認しています...
-            </div>
-
-        </section>
-
-
-        <section class="panel info-panel">
-
-            <div class="info-title">
-                💡 ブラウザAI
-            </div>
-
-            <p>
-                画像生成は対応GPUを使ってブラウザ内で実行されます。
-                APIキーや画像アップロードは必要ありません。
-            </p>
-
-            <p>
-                初回はAIモデルのダウンロードが必要です。
-                ダウンロード後はブラウザ側にキャッシュされます。
-            </p>
-
-        </section>
-
-    </aside>
-
-
-    <!-- 右側 -->
-
-    <section class="main-content">
-
-        <div class="result-header">
-
-            <div>
-
-                <h2>
-                    生成結果
-                </h2>
-
-                <p id="resultInfo">
-                    まだ画像がありません
-                </p>
-
-            </div>
-
-
-            <div class="result-actions">
+            <div class="quick-prompts">
 
                 <button
-                    id="regenerateButton"
+                    class="quick-prompt"
+                    data-prompt="A beautiful Japanese woman standing in Tokyo at night, cinematic lighting, highly detailed"
+                >
+                    👩 女性
+                </button>
+
+                <button
+                    class="quick-prompt"
+                    data-prompt="A futuristic cyberpunk city at night, neon lights, cinematic, highly detailed"
+                >
+                    🌃 サイバーパンク
+                </button>
+
+                <button
+                    class="quick-prompt"
+                    data-prompt="A cute cat sitting in a sunny garden, realistic photography"
+                >
+                    🐈 猫
+                </button>
+
+                <button
+                    class="quick-prompt"
+                    data-prompt="A beautiful fantasy castle floating above the clouds, epic fantasy art"
+                >
+                    🏰 ファンタジー
+                </button>
+
+            </div>
+
+
+            <div class="button-row">
+
+                <button
+                    id="generate"
+                    class="primary-button"
                     disabled
                 >
-                    ↻ 再生成
+                    ✨ 生成
                 </button>
+
+                <button
+                    id="cancel"
+                    class="secondary-button"
+                    disabled
+                >
+                    ⛔ キャンセル
+                </button>
+
+            </div>
+
+        </section>
+
+
+        <!-- 結果 -->
+        <section class="card">
+
+            <div class="section-title">
+                <h2>生成結果</h2>
 
                 <button
                     id="downloadButton"
+                    class="secondary-button"
                     disabled
                 >
-                    ↓ PNG保存
+                    ⬇ ダウンロード
                 </button>
-
             </div>
-
-        </div>
-
-
-        <div class="canvas-wrapper">
 
             <div
-                id="emptyState"
-                class="empty-state"
+                id="resultContainer"
+                class="result-container"
             >
 
-                <div class="empty-icon">
-                    ✦
-                </div>
-
-                <h3>
-                    AI画像を生成しましょう
-                </h3>
-
-                <p>
-                    左側にプロンプトを入力してください
-                </p>
-
-            </div>
-
-
-            <img
-                id="resultImage"
-                class="result-image"
-                alt="AI生成画像"
-            >
-
-
-            <div
-                id="loading"
-                class="loading hidden"
-            >
-
-                <div class="spinner"></div>
-
-                <strong>
-                    AI画像を生成しています
-                </strong>
-
-                <span id="loadingText">
-                    準備中...
-                </span>
-
-            </div>
-
-        </div>
-
-
-        <section class="history-section">
-
-            <div class="history-header">
-
-                <div>
-
-                    <h2>
-                        生成履歴
-                    </h2>
+                <div
+                    id="resultPlaceholder"
+                    class="result-placeholder"
+                >
+                    <div class="placeholder-icon">
+                        🖼️
+                    </div>
 
                     <p>
-                        このブラウザに保存されます
+                        ここに生成画像が表示されます
                     </p>
-
                 </div>
 
-                <button id="clearHistory">
-                    履歴を削除
-                </button>
+                <img
+                    id="resultImage"
+                    alt="生成画像"
+                >
 
             </div>
 
+        </section>
+
+
+        <!-- 履歴 -->
+        <section class="card">
+
+            <div class="section-title">
+                <h2>履歴</h2>
+
+                <button
+                    id="clearHistory"
+                    class="secondary-button"
+                >
+                    履歴を削除
+                </button>
+            </div>
 
             <div
                 id="history"
                 class="history"
-            >
-
-                <div class="history-empty">
-                    生成履歴はありません
-                </div>
-
-            </div>
+            ></div>
 
         </section>
 
-    </section>
-
-</main>
+    </main>
 
 
-<footer>
-    DreamCanvas v2.0.0 · Browser AI · WebGPU
-</footer>
+    <footer>
+        <p>
+            AI Image Generator
+        </p>
+
+        <p class="small">
+            WebGPU + SD-Turbo
+        </p>
+    </footer>
 
 
-<script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js"></script>
 
 </body>
 </html>
