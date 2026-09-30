@@ -5,7 +5,7 @@ import {
     unloadModel
 } from "https://cdn.jsdelivr.net/npm/web-txt2img@0.3.1/dist/index.js";
 
-import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.webgpu.min.mjs";
+import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.webgpu.min.mjs";
 
 const MODEL_ID = "sd-turbo";
 const IMAGE_SIZE = 512;
@@ -52,14 +52,18 @@ function setText(element, value) {
 }
 
 function setProgress(value, text = "") {
-    const pct = Math.max(0, Math.min(100, Number(value) || 0));
+    const pct = Math.max(
+        0,
+        Math.min(100, Number(value) || 0)
+    );
 
     if (progressBar) {
         progressBar.style.width = `${pct}%`;
     }
 
     if (progressText) {
-        progressText.textContent = text || `${Math.round(pct)}%`;
+        progressText.textContent =
+            text || `${Math.round(pct)}%`;
     }
 }
 
@@ -79,7 +83,10 @@ function setWebGPUStatus(text, ok = false) {
     setText(webgpuStatus, text);
 
     if (webgpuStatus) {
-        webgpuStatus.classList.toggle("success", ok);
+        webgpuStatus.classList.toggle(
+            "success",
+            ok
+        );
     }
 }
 
@@ -87,7 +94,10 @@ function setModelStatus(text, ok = false) {
     setText(modelStatus, text);
 
     if (modelStatus) {
-        modelStatus.classList.toggle("success", ok);
+        modelStatus.classList.toggle(
+            "success",
+            ok
+        );
     }
 }
 
@@ -95,7 +105,8 @@ function setGeneratingState(active) {
     generating = active;
 
     if (generateButton) {
-        generateButton.disabled = active || !modelLoaded;
+        generateButton.disabled =
+            active || !modelLoaded;
     }
 
     if (cancelButton) {
@@ -114,7 +125,9 @@ function progressPercent(progress) {
     }
 
     if (typeof progress === "number") {
-        return progress <= 1 ? progress * 100 : progress;
+        return progress <= 1
+            ? progress * 100
+            : progress;
     }
 
     if (typeof progress.pct === "number") {
@@ -165,17 +178,29 @@ async function initializeAI() {
     setProgress(0, "WebGPUを確認中...");
 
     try {
-        console.log("Checking web-txt2img capabilities...");
+        console.log(
+            "Checking web-txt2img capabilities..."
+        );
 
-        capabilities = await detectCapabilities();
+        capabilities =
+            await detectCapabilities();
 
-        console.log("Capabilities:", capabilities);
+        console.log(
+            "Capabilities:",
+            capabilities
+        );
 
-        if (!capabilities || !capabilities.webgpu) {
-            setWebGPUStatus("利用不可", false);
+        if (
+            !capabilities ||
+            !capabilities.webgpu
+        ) {
+            setWebGPUStatus(
+                "利用不可",
+                false
+            );
 
             throw new Error(
-                "WebGPUが利用できません。このサイトではCPU/WASMフォールバックを使用しません。"
+                "WebGPUが利用できません。"
             );
         }
 
@@ -188,38 +213,56 @@ async function initializeAI() {
 
         if (!capabilities.shaderF16) {
             console.warn(
-                "shaderF16 is not available. WebGPU is available, but performance may be lower."
+                "shaderF16 is not available. " +
+                "WebGPU is available, but performance may be lower."
             );
         }
 
-        setProgress(5, "ONNX Runtime WebGPUを準備中...");
-        setModelStatus("モデル読み込み中");
+        setProgress(
+            5,
+            "ONNX Runtime WebGPUを準備中..."
+        );
+
+        setModelStatus(
+            "モデル読み込み中"
+        );
+
+        console.log(
+            "Loading SD-Turbo with WebGPU only..."
+        );
 
         /*
-         * SD-TurboはWebGPU専用。
+         * SD-TurboはWebGPUを優先。
          *
-         * WASMをbackendPreferenceに入れないことで、
-         * CPUへのフォールバックをさせない。
+         * WASMをbackendPreferenceに含めないため、
+         * このコードからWASMを明示的に選択しない。
          */
         const loadResult = await loadModel(
             MODEL_ID,
             {
-                backendPreference: ["webgpu"],
+                backendPreference: [
+                    "webgpu"
+                ],
 
-                // web-txt2imgへONNX Runtime Webを注入
+                /*
+                 * ONNX Runtime WebGPU版を注入。
+                 */
                 ort,
 
-                // 念のためWASM設定は使わない
                 onProgress: (progress) => {
-                    const pct = progressPercent(progress);
+                    const pct =
+                        progressPercent(
+                            progress
+                        );
 
-                    const message = progressMessage(
-                        progress,
-                        "モデル読み込み中..."
-                    );
+                    const message =
+                        progressMessage(
+                            progress,
+                            "モデル読み込み中..."
+                        );
 
-                    // モデル読み込みを5～90%に表示
-                    const uiPct = 5 + pct * 0.85;
+                    const uiPct =
+                        5 + pct * 0.85;
 
                     setProgress(
                         uiPct,
@@ -229,37 +272,64 @@ async function initializeAI() {
             }
         );
 
-        console.log("Model loaded:", loadResult);
+        console.log(
+            "Model loaded:",
+            loadResult
+        );
 
-        if (!loadResult || loadResult.ok === false) {
-            const message =
+        if (
+            !loadResult ||
+            loadResult.ok === false
+        ) {
+            throw new Error(
                 loadResult?.message ||
                 loadResult?.reason ||
-                "モデルの読み込みに失敗しました。";
-
-            throw new Error(message);
+                "モデルの読み込みに失敗しました。"
+            );
         }
 
         modelLoaded = true;
 
-        setProgress(100, "準備完了");
-        setModelStatus("SD-Turbo 読み込み完了", true);
-        setStatus("準備完了", "success");
+        setProgress(
+            100,
+            "準備完了"
+        );
+
+        setModelStatus(
+            "SD-Turbo 読み込み完了",
+            true
+        );
+
+        setStatus(
+            "準備完了",
+            "success"
+        );
 
         if (generateButton) {
-            generateButton.disabled = false;
+            generateButton.disabled =
+                false;
         }
 
-        console.log("AI initialization completed.");
+        console.log(
+            "AI initialization completed."
+        );
 
     } catch (error) {
-        console.error("AI initialization failed:", error);
+        console.error(
+            "AI initialization failed:",
+            error
+        );
 
         modelLoaded = false;
 
-        setStatus("初期化失敗", "error");
+        setStatus(
+            "初期化失敗",
+            "error"
+        );
+
         setModelStatus(
-            error?.message || "モデルの読み込みに失敗しました。",
+            error?.message ||
+            "モデルの読み込みに失敗しました。",
             false
         );
 
@@ -269,7 +339,8 @@ async function initializeAI() {
         );
 
         if (generateButton) {
-            generateButton.disabled = true;
+            generateButton.disabled =
+                true;
         }
 
         throw error;
@@ -287,12 +358,14 @@ async function generate() {
     }
 
     if (!modelLoaded) {
-        alert("AIモデルがまだ準備できていません。");
+        alert(
+            "AIモデルがまだ準備できていません。"
+        );
         return;
     }
 
     if (
-        capabilities &&
+        !capabilities ||
         !capabilities.webgpu
     ) {
         alert(
@@ -301,15 +374,20 @@ async function generate() {
         return;
     }
 
-    const prompt = promptInput?.value.trim() || "";
+    const prompt =
+        promptInput?.value.trim() || "";
 
     if (!prompt) {
-        alert("プロンプトを入力してください。");
+        alert(
+            "プロンプトを入力してください。"
+        );
+
         promptInput?.focus();
         return;
     }
 
-    const seedText = seedInput?.value.trim() || "";
+    const seedText =
+        seedInput?.value.trim() || "";
 
     let seed;
 
@@ -321,7 +399,10 @@ async function generate() {
         seed = Number(seedText);
 
         if (!Number.isFinite(seed)) {
-            alert("Seedには数字を入力してください。");
+            alert(
+                "Seedには数字を入力してください。"
+            );
+
             seedInput?.focus();
             return;
         }
@@ -329,88 +410,135 @@ async function generate() {
         seed = Math.floor(seed);
     }
 
-    /*
-     * SD-Turboはweb-txt2imgの仕様上、
-     * 現在512x512で動作させる。
-     *
-     * UIにStepsがあっても、SD-Turbo側では
-     * Stable Diffusionの通常stepsとして直接扱わない。
-     */
     const negativePrompt =
-        negativePromptInput?.value.trim() || "";
+        negativePromptInput?.value.trim() ||
+        "";
 
-    console.log("Generation started.");
-    console.log("Prompt:", prompt);
-    console.log("Negative prompt:", negativePrompt);
-    console.log("Seed:", seed);
+    const steps =
+        Number(stepsInput?.value) || 1;
+
+    console.log(
+        "Generation started."
+    );
+
+    console.log(
+        "Prompt:",
+        prompt
+    );
+
+    console.log(
+        "Negative prompt:",
+        negativePrompt
+    );
+
+    console.log(
+        "Seed:",
+        seed
+    );
+
+    console.log(
+        "Steps:",
+        steps
+    );
 
     setGeneratingState(true);
 
     setStatus("生成中");
-    setProgress(0, "生成を開始しています...");
+
+    setProgress(
+        0,
+        "生成を開始しています..."
+    );
 
     if (resultPlaceholder) {
-        resultPlaceholder.style.display = "none";
+        resultPlaceholder.style.display =
+            "none";
     }
 
     currentAbortController =
         new AbortController();
 
     try {
-        const result = await generateImage({
-            model: MODEL_ID,
-            prompt,
-            seed,
-            width: IMAGE_SIZE,
-            height: IMAGE_SIZE,
-            signal: currentAbortController.signal,
+        const result =
+            await generateImage({
+                model: MODEL_ID,
+                prompt,
+                seed,
+                width: IMAGE_SIZE,
+                height: IMAGE_SIZE,
+                signal:
+                    currentAbortController.signal,
 
-            onProgress: (progress) => {
-                const pct = progressPercent(progress);
+                onProgress: (progress) => {
+                    const pct =
+                        progressPercent(
+                            progress
+                        );
 
-                const phase = progressMessage(
-                    progress,
-                    "画像生成中..."
-                );
+                    const phase =
+                        progressMessage(
+                            progress,
+                            "画像生成中..."
+                        );
 
-                setProgress(
-                    pct,
-                    `${phase} ${Math.round(pct)}%`
-                );
-            }
-        });
+                    setProgress(
+                        pct,
+                        `${phase} ${Math.round(pct)}%`
+                    );
+                }
+            });
 
-        console.log("Generation result:", result);
+        console.log(
+            "Generation result:",
+            result
+        );
 
-        if (!result || result.ok === false) {
-            const reason =
+        if (
+            !result ||
+            result.ok === false
+        ) {
+            throw new Error(
                 result?.message ||
                 result?.reason ||
-                "画像生成に失敗しました。";
-
-            throw new Error(reason);
+                "画像生成に失敗しました。"
+            );
         }
 
-        if (!(result.blob instanceof Blob)) {
+        if (
+            !(result.blob instanceof Blob)
+        ) {
             throw new Error(
                 "生成結果に画像データがありません。"
             );
         }
 
         const imageUrl =
-            URL.createObjectURL(result.blob);
+            URL.createObjectURL(
+                result.blob
+            );
 
         if (resultImage) {
-            resultImage.src = imageUrl;
-            resultImage.style.display = "block";
+            resultImage.src =
+                imageUrl;
+
+            resultImage.style.display =
+                "block";
         }
 
         if (resultPlaceholder) {
-            resultPlaceholder.style.display = "none";
+            resultPlaceholder.style.display =
+                "none";
         }
 
-        setProgress(100, "生成完了");
-        setStatus("生成完了", "success");
+        setProgress(
+            100,
+            "生成完了"
+        );
+
+        setStatus(
+            "生成完了",
+            "success"
+        );
 
         saveHistory({
             prompt,
@@ -422,26 +550,39 @@ async function generate() {
         renderHistory();
 
         console.log(
-            `Generation completed in ${
-                result.timeMs ?? "?"
-            } ms`
+            "Generation completed in",
+            result.timeMs ?? "?",
+            "ms"
         );
 
     } catch (error) {
         if (
-            currentAbortController?.signal.aborted
+            currentAbortController?.signal
+                .aborted
         ) {
-            console.log("Generation cancelled.");
+            console.log(
+                "Generation cancelled."
+            );
 
-            setStatus("キャンセルしました");
-            setProgress(0, "キャンセル");
+            setStatus(
+                "キャンセルしました"
+            );
+
+            setProgress(
+                0,
+                "キャンセル"
+            );
+
         } else {
             console.error(
                 "Generation failed:",
                 error
             );
 
-            setStatus("生成失敗", "error");
+            setStatus(
+                "生成失敗",
+                "error"
+            );
 
             setProgress(
                 0,
@@ -450,13 +591,15 @@ async function generate() {
             );
 
             alert(
-                `画像生成に失敗しました。\n\n${
-                    error?.message || error
-                }`
+                "画像生成に失敗しました。\n\n" +
+                (error?.message || error)
             );
         }
+
     } finally {
-        currentAbortController = null;
+        currentAbortController =
+            null;
+
         setGeneratingState(false);
 
         if (modelLoaded) {
@@ -478,12 +621,20 @@ function cancelGeneration() {
         return;
     }
 
-    console.log("Cancelling generation...");
+    console.log(
+        "Cancelling generation..."
+    );
 
     currentAbortController.abort();
 
-    setStatus("キャンセル中");
-    setProgress(0, "キャンセルしています...");
+    setStatus(
+        "キャンセル中"
+    );
+
+    setProgress(
+        0,
+        "キャンセルしています..."
+    );
 }
 
 
@@ -494,17 +645,21 @@ function cancelGeneration() {
 function getHistory() {
     try {
         const raw =
-            localStorage.getItem(HISTORY_KEY);
+            localStorage.getItem(
+                HISTORY_KEY
+            );
 
         if (!raw) {
             return [];
         }
 
-        const parsed = JSON.parse(raw);
+        const parsed =
+            JSON.parse(raw);
 
         return Array.isArray(parsed)
             ? parsed
             : [];
+
     } catch (error) {
         console.warn(
             "Failed to read history:",
@@ -517,7 +672,8 @@ function getHistory() {
 
 function saveHistory(item) {
     try {
-        let history = getHistory();
+        let history =
+            getHistory();
 
         history.unshift({
             prompt: item.prompt,
@@ -526,8 +682,8 @@ function saveHistory(item) {
             createdAt: item.createdAt
         });
 
-        // 最大20件
-        history = history.slice(0, 20);
+        history =
+            history.slice(0, 20);
 
         localStorage.setItem(
             HISTORY_KEY,
@@ -551,7 +707,8 @@ function renderHistory() {
         return;
     }
 
-    const history = getHistory();
+    const history =
+        getHistory();
 
     historyGrid.innerHTML = "";
 
@@ -561,42 +718,72 @@ function renderHistory() {
 
     for (const item of history) {
         const card =
-            document.createElement("div");
+            document.createElement(
+                "div"
+            );
 
-        card.className = "history-item";
+        card.className =
+            "history-item";
 
         const image =
-            document.createElement("img");
+            document.createElement(
+                "img"
+            );
 
         image.src = item.url;
+
         image.alt =
-            item.prompt || "Generated image";
-        image.loading = "lazy";
+            item.prompt ||
+            "Generated image";
+
+        image.loading =
+            "lazy";
 
         const info =
-            document.createElement("div");
+            document.createElement(
+                "div"
+            );
 
-        info.className = "history-info";
+        info.className =
+            "history-info";
 
         const prompt =
-            document.createElement("div");
+            document.createElement(
+                "div"
+            );
 
-        prompt.className = "history-prompt";
+        prompt.className =
+            "history-prompt";
+
         prompt.textContent =
             item.prompt || "";
 
         const seed =
-            document.createElement("div");
+            document.createElement(
+                "div"
+            );
 
-        seed.className = "history-seed";
+        seed.className =
+            "history-seed";
+
         seed.textContent =
             `Seed: ${item.seed}`;
 
-        info.appendChild(prompt);
-        info.appendChild(seed);
+        info.appendChild(
+            prompt
+        );
 
-        card.appendChild(image);
-        card.appendChild(info);
+        info.appendChild(
+            seed
+        );
+
+        card.appendChild(
+            image
+        );
+
+        card.appendChild(
+            info
+        );
 
         card.addEventListener(
             "click",
@@ -614,6 +801,7 @@ function renderHistory() {
                 if (resultImage) {
                     resultImage.src =
                         item.url;
+
                     resultImage.style.display =
                         "block";
                 }
@@ -630,12 +818,15 @@ function renderHistory() {
             }
         );
 
-        historyGrid.appendChild(card);
+        historyGrid.appendChild(
+            card
+        );
     }
 }
 
 function clearHistory() {
-    const history = getHistory();
+    const history =
+        getHistory();
 
     if (history.length === 0) {
         return;
@@ -649,17 +840,17 @@ function clearHistory() {
         return;
     }
 
-    /*
-     * object URLはページ内で作られたものなので、
-     * ここではlocalStorageだけ消す。
-     */
-    localStorage.removeItem(HISTORY_KEY);
+    localStorage.removeItem(
+        HISTORY_KEY
+    );
 
     if (historyGrid) {
         historyGrid.innerHTML = "";
     }
 
-    console.log("生成履歴を削除しました。");
+    console.log(
+        "生成履歴を削除しました。"
+    );
 }
 
 
@@ -673,20 +864,25 @@ function setupQuickPrompts() {
             "[data-prompt]"
         );
 
-    buttons.forEach((button) => {
-        button.addEventListener(
-            "click",
-            () => {
-                const value =
-                    button.dataset.prompt || "";
+    buttons.forEach(
+        (button) => {
+            button.addEventListener(
+                "click",
+                () => {
+                    const value =
+                        button.dataset.prompt ||
+                        "";
 
-                if (promptInput) {
-                    promptInput.value = value;
-                    promptInput.focus();
+                    if (promptInput) {
+                        promptInput.value =
+                            value;
+
+                        promptInput.focus();
+                    }
                 }
-            }
-        );
-    });
+            );
+        }
+    );
 }
 
 
@@ -705,13 +901,17 @@ function setupTheme() {
         );
 
     if (saved === "dark") {
-        document.body.classList.add("dark");
+        document.body.classList.add(
+            "dark"
+        );
     }
 
     themeButton.addEventListener(
         "click",
         () => {
-            document.body.classList.toggle("dark");
+            document.body.classList.toggle(
+                "dark"
+            );
 
             const dark =
                 document.body.classList.contains(
@@ -720,7 +920,9 @@ function setupTheme() {
 
             localStorage.setItem(
                 "ai-image-generator-theme",
-                dark ? "dark" : "light"
+                dark
+                    ? "dark"
+                    : "light"
             );
         }
     );
@@ -728,7 +930,7 @@ function setupTheme() {
 
 
 // ============================================================
-// Download
+// Image
 // ============================================================
 
 function setupImageDownload() {
@@ -751,18 +953,22 @@ function setupImageDownload() {
 
 window.addEventListener(
     "beforeunload",
-    async () => {
+    () => {
         try {
             if (generating) {
                 currentAbortController?.abort();
             }
 
             if (modelLoaded) {
-                await unloadModel(MODEL_ID);
+                /*
+                 * beforeunload内では非同期処理を
+                 * 待てないため、ここではAbortのみ。
+                 */
             }
+
         } catch (error) {
             console.warn(
-                "Model unload failed:",
+                "Cleanup failed:",
                 error
             );
         }
@@ -790,9 +996,6 @@ function setupEvents() {
         clearHistory
     );
 
-    /*
-     * Ctrl + Enterでも生成
-     */
     promptInput?.addEventListener(
         "keydown",
         (event) => {
@@ -833,15 +1036,18 @@ async function start() {
     setModelStatus("準備中");
 
     if (generateButton) {
-        generateButton.disabled = true;
+        generateButton.disabled =
+            true;
     }
 
     if (cancelButton) {
-        cancelButton.disabled = true;
+        cancelButton.disabled =
+            true;
     }
 
     try {
         await initializeAI();
+
     } catch (error) {
         console.error(
             "Startup failed:",
