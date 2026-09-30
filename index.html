@@ -1,16 +1,12 @@
 <!DOCTYPE html>
-
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-```
-<title>AI Image Generator</title>
+    <title>AI Image Generator</title>
 
-<link rel="stylesheet" href="./style.css">
-```
-
+    <link rel="stylesheet" href="./style.css">
 </head>
 
 <body>
@@ -21,236 +17,286 @@
         <p>ブラウザ上でAI画像を生成</p>
     </div>
 
-```
-<button id="themeButton" class="secondary-button">🌙</button>
-```
-
+    <button id="themeButton" class="secondary-button">
+        🌙
+    </button>
 </header>
+
 
 <main class="container">
 
-```
-<section class="card">
+    <!-- AI状態 -->
+    <section class="card">
 
-    <div class="section-title">
-        <h2>AIモデル</h2>
+        <div class="section-title">
+            <h2>AIモデル</h2>
 
-        <span id="statusBadge" class="badge loading">
-            準備中
-        </span>
-    </div>
-
-    <div class="model-status">
-
-        <div class="status-row">
-            <span>WebGPU</span>
-            <strong id="webgpuStatus">確認中...</strong>
-        </div>
-
-        <div class="status-row">
-            <span>AIモデル</span>
-            <strong id="modelStatus">準備中...</strong>
-        </div>
-
-    </div>
-
-    <div class="progress-wrapper">
-
-        <div class="progress-info">
-            <span id="status">
-                AIモデルを準備しています...
+            <span id="statusBadge" class="badge loading">
+                準備中
             </span>
-
-            <span id="progressText">0%</span>
         </div>
 
-        <progress id="progressBar" value="0" max="100"></progress>
 
-    </div>
+        <div class="model-status">
 
-</section>
+            <div class="status-row">
+                <span>WebGPU</span>
 
-
-<section class="card">
-
-    <h2>プロンプト</h2>
-
-    <label for="prompt">
-        画像の内容
-    </label>
-
-    <textarea
-        id="prompt"
-        rows="5"
-        placeholder="例: A beautiful Japanese woman standing in Tokyo at night, cinematic lighting, highly detailed"
-    ></textarea>
-
-    <label for="negativePrompt">
-        ネガティブプロンプト
-    </label>
-
-    <textarea
-        id="negativePrompt"
-        rows="3"
-        placeholder="例: blurry, low quality, distorted"
-    ></textarea>
-
-    <div class="settings-grid">
-
-        <div>
-            <label for="seed">Seed</label>
-
-            <input
-                id="seed"
-                type="number"
-                placeholder="ランダム"
-            >
-        </div>
-
-        <div>
-            <label for="steps">Steps</label>
-
-            <input
-                id="steps"
-                type="number"
-                min="1"
-                max="4"
-                value="1"
-            >
-        </div>
-
-    </div>
-
-
-    <div class="quick-prompts">
-
-        <button
-            class="quick-prompt"
-            data-prompt="A beautiful Japanese woman standing in Tokyo at night, cinematic lighting, highly detailed"
-        >
-            👩 女性
-        </button>
-
-        <button
-            class="quick-prompt"
-            data-prompt="A futuristic cyberpunk city at night, neon lights, cinematic, highly detailed"
-        >
-            🌃 サイバーパンク
-        </button>
-
-        <button
-            class="quick-prompt"
-            data-prompt="A cute cat sitting in a sunny garden, realistic photography"
-        >
-            🐈 猫
-        </button>
-
-        <button
-            class="quick-prompt"
-            data-prompt="A beautiful fantasy castle floating above the clouds, epic fantasy art"
-        >
-            🏰 ファンタジー
-        </button>
-
-    </div>
-
-
-    <div class="button-row">
-
-        <button
-            id="generate"
-            class="primary-button"
-            disabled
-        >
-            ✨ 生成
-        </button>
-
-        <button
-            id="cancel"
-            class="secondary-button"
-            disabled
-        >
-            ⛔ キャンセル
-        </button>
-
-    </div>
-
-</section>
-
-
-<section class="card">
-
-    <div class="section-title">
-
-        <h2>生成結果</h2>
-
-        <button
-            id="downloadButton"
-            class="secondary-button"
-            disabled
-        >
-            ⬇ ダウンロード
-        </button>
-
-    </div>
-
-    <div id="resultContainer" class="result-container">
-
-        <div id="resultPlaceholder" class="result-placeholder">
-
-            <div class="placeholder-icon">
-                🖼️
+                <strong id="webgpuStatus">
+                    確認中...
+                </strong>
             </div>
 
-            <p>
-                ここに生成画像が表示されます
-            </p>
+
+            <div class="status-row">
+                <span>AIモデル</span>
+
+                <strong id="modelStatus">
+                    読み込み前
+                </strong>
+            </div>
 
         </div>
 
-        <img
-            id="resultImage"
-            alt="生成画像"
+
+        <div class="progress-wrapper">
+
+            <div class="progress-info">
+
+                <span id="status">
+                    AIモデルを準備しています...
+                </span>
+
+                <span id="progressText">
+                    0%
+                </span>
+
+            </div>
+
+
+            <progress
+                id="progressBar"
+                value="0"
+                max="100"
+            ></progress>
+
+        </div>
+
+    </section>
+
+
+    <!-- プロンプト -->
+    <section class="card">
+
+        <h2>プロンプト</h2>
+
+
+        <label for="prompt">
+            画像の内容
+        </label>
+
+        <textarea
+            id="prompt"
+            rows="5"
+            placeholder="例: A beautiful Japanese woman standing in Tokyo at night, cinematic lighting, highly detailed"
+        ></textarea>
+
+
+        <label for="negativePrompt">
+            ネガティブプロンプト
+        </label>
+
+        <textarea
+            id="negativePrompt"
+            rows="3"
+            placeholder="例: blurry, low quality, distorted"
+        ></textarea>
+
+
+        <div class="settings-grid">
+
+            <div>
+
+                <label for="seed">
+                    Seed
+                </label>
+
+                <input
+                    id="seed"
+                    type="number"
+                    placeholder="ランダム"
+                >
+
+            </div>
+
+
+            <div>
+
+                <label for="steps">
+                    Steps
+                </label>
+
+                <input
+                    id="steps"
+                    type="number"
+                    min="1"
+                    max="4"
+                    value="1"
+                >
+
+            </div>
+
+        </div>
+
+
+        <div class="quick-prompts">
+
+            <button
+                class="quick-prompt"
+                data-prompt="A beautiful Japanese woman standing in Tokyo at night, cinematic lighting, highly detailed"
+            >
+                👩 女性
+            </button>
+
+
+            <button
+                class="quick-prompt"
+                data-prompt="A futuristic cyberpunk city at night, neon lights, cinematic, highly detailed"
+            >
+                🌃 サイバーパンク
+            </button>
+
+
+            <button
+                class="quick-prompt"
+                data-prompt="A cute cat sitting in a sunny garden, realistic photography"
+            >
+                🐈 猫
+            </button>
+
+
+            <button
+                class="quick-prompt"
+                data-prompt="A beautiful fantasy castle floating above the clouds, epic fantasy art"
+            >
+                🏰 ファンタジー
+            </button>
+
+        </div>
+
+
+        <div class="button-row">
+
+            <button
+                id="generate"
+                class="primary-button"
+                disabled
+            >
+                ✨ 生成
+            </button>
+
+
+            <button
+                id="cancel"
+                class="secondary-button"
+                disabled
+            >
+                ⛔ キャンセル
+            </button>
+
+        </div>
+
+    </section>
+
+
+    <!-- 結果 -->
+    <section class="card">
+
+        <div class="section-title">
+
+            <h2>生成結果</h2>
+
+            <button
+                id="downloadButton"
+                class="secondary-button"
+                disabled
+            >
+                ⬇ ダウンロード
+            </button>
+
+        </div>
+
+
+        <div
+            id="resultContainer"
+            class="result-container"
         >
 
-    </div>
+            <div
+                id="resultPlaceholder"
+                class="result-placeholder"
+            >
 
-</section>
+                <div class="placeholder-icon">
+                    🖼️
+                </div>
+
+                <p>
+                    ここに生成画像が表示されます
+                </p>
+
+            </div>
 
 
-<section class="card">
+            <img
+                id="resultImage"
+                alt="生成画像"
+            >
 
-    <div class="section-title">
+        </div>
 
-        <h2>履歴</h2>
+    </section>
 
-        <button
-            id="clearHistory"
-            class="secondary-button"
-        >
-            履歴を削除
-        </button>
 
-    </div>
+    <!-- 履歴 -->
+    <section class="card">
 
-    <div id="history" class="history"></div>
+        <div class="section-title">
 
-</section>
-```
+            <h2>履歴</h2>
+
+            <button
+                id="clearHistory"
+                class="secondary-button"
+            >
+                履歴を削除
+            </button>
+
+        </div>
+
+
+        <div
+            id="history"
+            class="history"
+        ></div>
+
+    </section>
 
 </main>
 
+
 <footer>
 
-```
-<p>AI Image Generator</p>
+    <p>
+        AI Image Generator
+    </p>
 
-<p class="small">
-    WebGPU + SD-Turbo
-</p>
-```
+    <p class="small">
+        WebGPU + SD-Turbo
+    </p>
 
 </footer>
+
 
 <script type="module" src="./app.js"></script>
 
