@@ -5,7 +5,7 @@ import {
     unloadModel
 } from "https://cdn.jsdelivr.net/npm/web-txt2img@0.3.1/dist/index.js";
 
-import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0/dist/ort.webgpu.min.mjs";
+import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.webgpu.min.mjs";
 
 const MODEL_ID = "sd-turbo";
 const IMAGE_SIZE = 512;
